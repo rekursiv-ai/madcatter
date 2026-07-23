@@ -66,7 +66,7 @@ dev = [
 [project.urls]
 Homepage = "https://www.rekursiv.ai"
 Repository = "https://github.com/rekursiv-ai/madcatter"
-Documentation = "https://github.com/rekursiv-ai/madcatter/blob/main/README.md"
+Documentation = "https://github.com/rekursiv-ai/madcatter/tree/main/docs"
 Source = "https://github.com/rekursiv-ai/madcatter"
 Issues = "https://github.com/rekursiv-ai/madcatter/issues"
 Changelog = "https://github.com/rekursiv-ai/madcatter/releases"
