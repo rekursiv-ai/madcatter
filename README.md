@@ -120,7 +120,7 @@ mdcat -n 20 -f log.md    # on first attach/reopen, show only the last 20 lines
 
 ```bash
 mdcat --export-html out.html README.md
-mdcat --export-ansi out.ans README.md
+mdcat --export-ansi out.and README.md
 ```
 
 **ASCII-only output** (no ANSI codes, no Unicode — box-drawing, bullets, arrows, etc. are
@@ -195,4 +195,3 @@ Sibling libraries in the [rekursiv-ai](https://github.com/rekursiv-ai) family:
 ## License
 
 Apache License 2.0
-
