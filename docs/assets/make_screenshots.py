@@ -26,7 +26,7 @@ from madcatter.mdcat import Markdown, process_emoji
 
 _HERE = Path(__file__).parent
 _SAMPLE = _HERE / "sample.md"
-_WIDTH = 72
+_WIDTH = 48
 _CODE_THEME = "monokai"
 
 

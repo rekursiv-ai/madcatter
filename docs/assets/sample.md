@@ -4,7 +4,7 @@ A tiny demo of **madcatter** rendering.
 
 ## Loss
 
-Training minimizes $L = -\sum_i y_i \log p_i$ over each batch.
+Minimizes $L = -\sum_i y_i \log p_i$ per batch.
 
 ## Code
 
@@ -20,4 +20,4 @@ def greet(name: str) -> str:
 | base  |    0.812 |
 | tuned |    0.947 |
 
-More in the [docs](https://github.com/rekursiv-ai/madcatter).
+More in the [docs](README.md).

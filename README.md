@@ -15,14 +15,12 @@ called `madcatter`; it installs a CLI called `mdcat`.
 > *If you like reading Markdown in the terminal and want it actually rendered — emoji, math,
 > tables, syntax highlighting — instead of dumped raw.*
 
-**`cat sample.md`** — the raw file:
+| `cat sample.md` | `mdcat sample.md` |
+|---|---|
+| ![raw markdown, as cat prints it](docs/assets/cat.svg) | ![the same file rendered by mdcat](docs/assets/mdcat.svg) |
 
-![raw markdown, as cat prints it](docs/assets/cat.svg)
-
-**`mdcat sample.md`** — the same file rendered by mdcat: an emoji shortcode, `$...$` math, a
-highlighted code block, and a table:
-
-![the same file rendered by mdcat](docs/assets/mdcat.svg)
+The same file, dumped raw (left) and through `mdcat` (right): an emoji shortcode, `$...$` math,
+a highlighted code block, and a table.
 
 ## Install
 
