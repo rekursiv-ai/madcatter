@@ -146,10 +146,12 @@ from madcatter.markdown import process_math_blocks, strip_frontmatter
 from madcatter.latex import latex2unicode
 from madcatter.emoji import resolve
 
-process_math_blocks("area is $\\pi r^2$")   # -> unicode-rendered math, code blocks left intact
+process_math_blocks(
+    "area is $\\pi r^2$"
+)  # -> unicode-rendered math, code blocks left intact
 strip_frontmatter(["---", "title: x", "---", "body"])  # -> ["body"]
-latex2unicode("x^2 + y_i")                  # -> "x² + yᵢ"
-resolve("wave")                             # -> "👋" (or None if unknown)
+latex2unicode("x^2 + y_i")  # -> "x² + yᵢ"
+resolve("wave")  # -> "👋" (or None if unknown)
 ```
 
 ## Development
