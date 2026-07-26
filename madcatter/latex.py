@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Final
+
 import re
 
 from pylatexenc import latexwalker
@@ -15,7 +17,7 @@ from pylatexenc.latexwalker import (
 
 
 # Additional LaTeX symbol mappings not handled by pylatexenc
-_EXTRA_SYMBOLS = {  # config-globals: ignore -- LaTeX symbol table.
+_EXTRA_SYMBOLS: Final = {
     "|": "‖",  # U+2016 double vertical line (norm)
     "Vert": "‖",  # U+2016 double vertical line (norm) - alias
     "lVert": "‖",  # U+2016 left double vertical line
@@ -76,7 +78,7 @@ _EXTRA_SYMBOLS = {  # config-globals: ignore -- LaTeX symbol table.
 
 
 # Unicode superscript mappings
-_SUPERSCRIPTS = {  # config-globals: ignore -- Unicode mapping table.
+_SUPERSCRIPTS: Final = {
     "0": "⁰",
     "1": "¹",
     "2": "²",
@@ -152,7 +154,7 @@ _SUPERSCRIPTS = {  # config-globals: ignore -- Unicode mapping table.
 
 # Unicode subscript mappings
 # Note: Unicode has limited subscript letters (no uppercase, few Greek)
-_SUBSCRIPTS = {  # config-globals: ignore -- Unicode mapping table.
+_SUBSCRIPTS: Final = {
     "0": "₀",
     "1": "₁",
     "2": "₂",
@@ -194,7 +196,7 @@ _SUBSCRIPTS = {  # config-globals: ignore -- Unicode mapping table.
     "χ": "ᵪ",
 }
 
-_FRACTIONS = {  # config-globals: ignore -- Unicode fraction table.
+_FRACTIONS: Final = {
     ("1", "2"): "½",
     ("1", "3"): "⅓",
     ("2", "3"): "⅔",
