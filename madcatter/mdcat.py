@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import ClassVar, override
+from typing import ClassVar, Final, override
 from urllib.parse import urlparse
 
 import argparse
@@ -73,7 +73,7 @@ _UNICODE_TO_ASCII_CHARS = str.maketrans(
         "\u00f7": "/",  # multiply, divide
     },
 )
-_UNICODE_TO_ASCII_STRS = [  # config-globals: ignore -- transliteration table.
+_UNICODE_TO_ASCII_STRS: Final = [
     ("…", "..."),
     ("—", "--"),
     ("±", "+/-"),
@@ -148,7 +148,7 @@ def process_emoji(text: str) -> str:
 
 
 # Style profiles
-STYLE_PROFILES = {  # config-globals: ignore -- CLI style presets.
+STYLE_PROFILES: Final = {
     "dark": {
         "code_theme": "monokai",
         "background": "black",
