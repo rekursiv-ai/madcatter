@@ -73,25 +73,24 @@ _UNICODE_TO_ASCII_CHARS = str.maketrans(
         "\u00f7": "/",  # multiply, divide
     },
 )
-_UNICODE_TO_ASCII_STRS: Final = [
-    ("…", "..."),
-    ("—", "--"),
-    ("±", "+/-"),
-    ("→", "->"),
-    ("←", "<-"),
-    ("↔", "<->"),
-    ("≤", "<="),
-    ("≥", ">="),
-    ("≠", "!="),
-    ("≈", "~="),
-    ("📑", "[TOC]"),
-]
 
 
 def to_ascii(text: str) -> str:
     """Convert Unicode text to ASCII."""
     text = text.translate(_UNICODE_TO_ASCII_CHARS)
-    for uni, asc in _UNICODE_TO_ASCII_STRS:
+    for uni, asc in (
+        ("…", "..."),
+        ("—", "--"),
+        ("±", "+/-"),
+        ("→", "->"),
+        ("←", "<-"),
+        ("↔", "<->"),
+        ("≤", "<="),
+        ("≥", ">="),
+        ("≠", "!="),
+        ("≈", "~="),
+        ("📑", "[TOC]"),
+    ):
         text = text.replace(uni, asc)
     return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
 
