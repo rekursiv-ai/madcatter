@@ -1,19 +1,13 @@
-#!/bin/sh
-# ruff: noqa: EXE003, D300, T201 -- Polyglot shell/Python script; console renderer prints.
-# fmt: off
-'''' 2>/dev/null #
-exec uv --quiet --project "$(dirname "$0")" run --frozen --no-sync python3 "$0" "$@"
-Render Markdown to the console with Rich.
+"""Render Markdown to the console with Rich.
 
 Custom markdown renderer that left-justifies headings instead of centering.
-'''
-# fmt: on
+"""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import ClassVar, Final, override
+from typing import ClassVar, Final, NoReturn, override
 from urllib.parse import urlparse
 
 import argparse
@@ -21,6 +15,7 @@ import collections
 import difflib
 import hashlib
 import io
+import os
 import pydoc
 import re
 import sys
@@ -482,6 +477,18 @@ def export_html(markdown_body: str, output_path: str) -> None:
         f.write(html_template)
 
 
+def _exit_on_broken_pipe() -> NoReturn:
+    """Exit(0) cleanly after a downstream reader closed the pipe.
+
+    Redirect the remaining stdout to /dev/null so the interpreter's
+    final flush at shutdown does not re-raise BrokenPipeError. See
+    https://docs.python.org/3/library/signal.html#note-on-sigpipe.
+    """
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    os.dup2(devnull, sys.stdout.fileno())
+    raise SystemExit(0)
+
+
 def render_markdown_file(path: str, console: Console, args: argparse.Namespace) -> str:
     """Read and render a markdown file, returning the body."""
     if path == "-":
@@ -760,8 +767,16 @@ def _parse_args(
 
 
 def main() -> int:
+    """Entry point; exit quietly if a pipe reader (e.g. `less`) quits early."""
+    try:
+        return _main()
+    except BrokenPipeError:
+        _exit_on_broken_pipe()
+
+
+def _main() -> int:
     parser = argparse.ArgumentParser(
-        description=(__doc__ or "").split("\n", 2)[2],
+        description=(__doc__ or "").strip(),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     args, remaining = _parse_args(parser)
@@ -853,10 +868,5 @@ def main() -> int:
 
     # Output ASCII-converted text
     if ascii_buffer is not None:
-        print(to_ascii(ascii_buffer.getvalue()), end="")
+        print(to_ascii(ascii_buffer.getvalue()), end="")  # noqa: T201
     return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
-# vim: ft=python
