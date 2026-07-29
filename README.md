@@ -16,9 +16,9 @@ called `madcatter`; it installs a CLI called `mdcat`.
 > *If you like reading Markdown in the terminal and want it actually rendered — emoji, math,
 > tables, syntax highlighting — instead of dumped raw.*
 
-![cat sample.md on the left, mdcat sample.md on the right](docs/assets/screenshot.png)
+![cat sample.md on the left, mdcat sample.md on the right](https://raw.githubusercontent.com/rekursiv-ai/madcatter/main/docs/assets/screenshot.png)
 
-The same file ([`docs/assets/sample.md`](docs/assets/sample.md)), dumped raw with `cat` (left)
+The same file ([`docs/assets/sample.md`](https://raw.githubusercontent.com/rekursiv-ai/madcatter/main/docs/assets/sample.md)), dumped raw with `cat` (left)
 and rendered by `mdcat` (right): an emoji shortcode, `$...$` math, a highlighted code block, and
 a table.
 
