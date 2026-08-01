@@ -43,13 +43,15 @@ and rendered by `mdcat` (right): an emoji shortcode, `$...$` math, a highlighted
 a table.
 
 
-## Quickstart
+## Example
 
 ```bash
-mdcat README.md                       # render a file
-mdcat -                               # render stdin
-echo '# hi :wave:' | mdcat -          # emoji shortcodes are expanded
-mdcat --toc README.md                 # render just the table of contents
+mdcat README.md                  # render a file
+mdcat -                          # render stdin
+echo '# hi :wave:' | mdcat -     # emoji shortcodes are expanded
+echo '$e^{i\pi}+1=0$' | mdcat    # best effort LaTeX: eⁱ⁽π⁾+1=0
+mdcat --toc README.md            # render just the table of contents
+mdcat -c foo.md | less -R        # ANSI colored pipes.
 ```
 
 ## Features
