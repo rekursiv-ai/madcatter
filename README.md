@@ -1,4 +1,4 @@
-# madcatter
+# madcatter🎩
 
 [![PyPI version](https://img.shields.io/pypi/v/madcatter.svg)](https://pypi.org/project/madcatter/)
 [![CI](https://github.com/rekursiv-ai/madcatter/actions/workflows/package-validation.yml/badge.svg?branch=main)](https://github.com/rekursiv-ai/madcatter/actions/workflows/package-validation.yml)
