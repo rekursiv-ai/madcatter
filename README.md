@@ -6,6 +6,23 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Discord](https://img.shields.io/discord/1530237005311639592?logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/2GZFPPvCqn)
 
+## Quick Start
+
+```bash
+# Mac:
+#   # Required for quick install.
+#   brew install uv
+
+# Ubuntu/Debian:
+#   # Required for quick install.
+#   sudo apt-get install -y curl &&
+#       curl -LsSf https://astral.sh/uv/install.sh | sh
+
+uv tool install madcatter
+
+mdcat README.md
+```
+
 `madcatter` is a [Rich](https://github.com/Textualize/rich)-based Markdown renderer for the
 terminal. It exists because `cat`-ing a Markdown file dumps raw `#`/`**`/`` ``` `` noise, and most
 "pretty cat" tools stop at syntax highlighting: `madcatter` also expands `:shortcode:` emoji,
