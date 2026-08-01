@@ -6,6 +6,8 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Discord](https://img.shields.io/discord/1530237005311639592?logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/2GZFPPvCqn)
 
+Rich-based Markdown console renderer (mdcat) and helpers.
+
 ## Quick Start
 
 ```bash
@@ -26,24 +28,12 @@ mdcat README.md
 # Alternatively: python -m pip install madcatter
 ```
 
-`madcatter` is a [Rich](https://github.com/Textualize/rich)-based Markdown renderer for the
-terminal. It exists because `cat`-ing a Markdown file dumps raw `#`/`**`/`` ``` `` noise, and most
-"pretty cat" tools stop at syntax highlighting: `madcatter` also expands `:shortcode:` emoji,
-converts LaTeX math to Unicode, extracts a table of contents or a single section, validates links,
-diffs two documents, and can tail a growing file the way `tail -F` tails a log. The package is
-called `madcatter`; it installs a CLI called `mdcat`.
-
-> *If you like reading Markdown in the terminal and want it actually rendered — emoji, math,
-> tables, syntax highlighting — instead of dumped raw.*
+## Example
 
 ![cat sample.md on the left, mdcat sample.md on the right](https://raw.githubusercontent.com/rekursiv-ai/madcatter/main/docs/assets/screenshot.png)
 
-The same file ([`docs/assets/sample.md`](https://raw.githubusercontent.com/rekursiv-ai/madcatter/main/docs/assets/sample.md)), dumped raw with `cat` (left)
-and rendered by `mdcat` (right): an emoji shortcode, `$...$` math, a highlighted code block, and
-a table.
-
-
-## Example
+> *If you like reading Markdown in the terminal and want it actually rendered — emoji, math,
+> tables, syntax highlighting — instead of dumped raw.*
 
 ```bash
 mdcat README.md                  # render a file
@@ -53,6 +43,19 @@ echo '$e^{i\pi}+1=0$' | mdcat    # best effort LaTeX: eⁱ⁽π⁾+1=0
 mdcat --toc README.md            # render just the table of contents
 mdcat -c foo.md | less -R        # ANSI colored pipes.
 ```
+
+## Description
+
+`madcatter` is a [Rich](https://github.com/Textualize/rich)-based Markdown renderer for the
+terminal. It exists because `cat`-ing a Markdown file dumps raw `#`/`**`/`` ``` `` noise, and most
+"pretty cat" tools stop at syntax highlighting: `madcatter` also expands `:shortcode:` emoji,
+converts LaTeX math to Unicode, extracts a table of contents or a single section, validates links,
+diffs two documents, and can tail a growing file the way `tail -F` tails a log. The package is
+called `madcatter`; it installs a CLI called `mdcat`.
+
+The same file ([`docs/assets/sample.md`](https://raw.githubusercontent.com/rekursiv-ai/madcatter/main/docs/assets/sample.md)), dumped raw with `cat` (left)
+and rendered by `mdcat` (right): an emoji shortcode, `$...$` math, a highlighted code block, and
+a table.
 
 ## Features
 
