@@ -21,6 +21,9 @@
 uv tool install madcatter
 
 mdcat README.md
+
+# As a library dependency: uv add madcatter
+# Alternatively: python -m pip install madcatter
 ```
 
 `madcatter` is a [Rich](https://github.com/Textualize/rich)-based Markdown renderer for the
@@ -39,18 +42,6 @@ The same file ([`docs/assets/sample.md`](https://raw.githubusercontent.com/rekur
 and rendered by `mdcat` (right): an emoji shortcode, `$...$` math, a highlighted code block, and
 a table.
 
-## Install
-
-```bash
-pip install madcatter
-```
-
-```bash
-uv add madcatter
-```
-
-To get just the `mdcat` command on your `PATH` without adding it to a project's dependencies, use
-`uv tool install madcatter` (the recommended way to install the CLI).
 
 ## Quickstart
 
