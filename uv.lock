@@ -474,7 +474,7 @@ wheels = [
 
 [[package]]
 name = "madcatter"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "markdown-it-py", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
