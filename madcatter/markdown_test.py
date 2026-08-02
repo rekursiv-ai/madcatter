@@ -83,6 +83,22 @@ def test_process_math_blocks_literal_placeholder_survives():
     assert "y²" in result
 
 
+def test_process_math_blocks_single_line_fence_span_survives():
+    """A one-line ```code``` span is not a fence opener; content must survive."""
+    text = "Intro,\n\n```throughput = min(a, b)```\n\nOutro.\n"
+    result = process_math_blocks(text, enable_math=True)
+    assert "throughput = min(a, b)" in result
+    assert "Outro." in result
+
+
+def test_process_math_blocks_unterminated_fence_survives():
+    """An unclosed fence must still emit its content, not swallow the tail."""
+    text = "Intro,\n\n```\nx = 1\ntail line\n"
+    result = process_math_blocks(text, enable_math=True)
+    assert "x = 1" in result
+    assert "tail line" in result
+
+
 def test_strip_frontmatter_present():
     lines = ["---", "title: hi", "---", "body"]
     assert strip_frontmatter(lines) == ["body"]
