@@ -8,6 +8,7 @@ All notable madcatter changes are documented here. This project follows
 ### Added
 
 - Commit B: baseline-divergence probe, first of two.
+- Commit C: baseline-divergence probe, second of two.
 
 ## 0.1.2 - 2026-08-01
 
