@@ -134,7 +134,7 @@ mdcat -n 20 -f log.md    # on first attach/reopen, show only the last 20 lines
 
 ```bash
 mdcat --export-html out.html README.md
-mdcat --export-ansi out.and README.md
+mdcat --export-ansi out.ansi README.md
 ```
 
 **ASCII-only output** (no ANSI codes, no Unicode — box-drawing, bullets, arrows, etc. are
