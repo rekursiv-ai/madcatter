@@ -5,6 +5,10 @@ All notable madcatter changes are documented here. This project follows
 
 ## Unreleased
 
+### Added
+
+- Commit B: baseline-divergence probe, first of two.
+
 ## 0.1.2 - 2026-08-01
 
 ### Changed
