@@ -8,6 +8,29 @@ import secrets
 from madcatter.latex import latex2unicode
 
 
+_FENCE_RE = re.compile(r"^(`{3,}|~{3,})(.*)$")
+
+
+def is_fence_delimiter(line: str) -> bool:
+    """Report whether a line opens or closes a fenced code block.
+
+    A single-line span such as ```` ```x = 1``` ```` is NOT a fence: CommonMark
+    forbids backticks in a fence info string, so the span is inline code.
+    Toggling fence state on it swallows the rest of the document.
+
+    Args:
+      line: One source line, with or without surrounding whitespace.
+
+    Returns:
+      is_delimiter: True when the line is a real fence open/close marker.
+
+    """
+    match = _FENCE_RE.match(line.strip())
+    if match is None:
+        return False
+    return "`" not in match.group(2)
+
+
 def process_math_blocks(markdown_body: str, enable_math: bool = True) -> str:
     """Convert LaTeX math in markdown to Unicode, leaving code blocks intact.
 
@@ -40,7 +63,7 @@ def process_math_blocks(markdown_body: str, enable_math: bool = True) -> str:
     in_fenced_block = False
     current_code_block: list[str] = []
     for line in lines:
-        if line.strip().startswith("```"):
+        if is_fence_delimiter(line):
             if in_fenced_block:
                 current_code_block.append(line)
                 result_lines.append(_placeholder(len(protected_blocks)))
@@ -59,6 +82,10 @@ def process_math_blocks(markdown_body: str, enable_math: bool = True) -> str:
             protected_blocks.append(line)
             continue
         result_lines.append(line)
+    if current_code_block:
+        # Unterminated fence: emit the buffer rather than discarding the tail.
+        result_lines.append(_placeholder(len(protected_blocks)))
+        protected_blocks.append("\n".join(current_code_block))
     text = "\n".join(result_lines)
 
     def _protect_inline_code(match: re.Match[str]) -> str:

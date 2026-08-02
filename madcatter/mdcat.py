@@ -38,7 +38,11 @@ from rich.tree import Tree
 import requests
 
 from madcatter.emoji import resolve as resolve_emoji
-from madcatter.markdown import process_math_blocks, strip_frontmatter
+from madcatter.markdown import (
+    is_fence_delimiter,
+    process_math_blocks,
+    strip_frontmatter,
+)
 
 
 # Unicode to ASCII translation for printable output
@@ -131,7 +135,7 @@ def process_emoji(text: str) -> str:
     result: list[str] = []
     in_fence = False
     for line in lines:
-        if line.strip().startswith("```"):
+        if is_fence_delimiter(line):
             in_fence = not in_fence
             result.append(line)
         elif in_fence or line.startswith("    "):
@@ -169,7 +173,7 @@ def extract_headings(markdown_body: str) -> list[tuple[int, str]]:
 
     for line in markdown_body.split("\n"):
         # Track code block boundaries
-        if line.strip().startswith("```"):
+        if is_fence_delimiter(line):
             in_code_block = not in_code_block
             continue
 

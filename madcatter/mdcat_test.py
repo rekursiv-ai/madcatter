@@ -8,7 +8,7 @@ import sys
 
 import pytest
 
-from madcatter.mdcat import main, process_emoji
+from madcatter.mdcat import extract_headings, main, process_emoji
 
 
 if TYPE_CHECKING:
@@ -48,6 +48,18 @@ def test_process_emoji_unknown_in_url_passthrough():
 
 def test_process_emoji_adjacent_colons():
     assert process_emoji("::rocket::") == ":🚀:"
+
+
+def test_process_emoji_single_line_fence_span_does_not_open_fence():
+    """A one-line ```code``` span must not suppress emoji on later lines."""
+    text = "```x = min(a, b)```\n\nDone :rocket:"
+    assert "🚀" in process_emoji(text)
+
+
+def test_extract_headings_after_single_line_fence_span():
+    """A one-line ```code``` span must not hide subsequent headings."""
+    text = "```x = min(a, b)```\n\n# Title\n"
+    assert extract_headings(text) == [(1, "Title")]
 
 
 class _BrokenPipeStdout:
