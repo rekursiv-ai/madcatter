@@ -213,7 +213,7 @@ Sibling libraries in the [rekursiv-ai](https://github.com/rekursiv-ai) family:
 If you find our work useful, please consider citing:
 
 ```bibtex
-@misc{rekursiv2026madcatter,
+@misc{rekursivai2026madcatter,
       title={Madcatter - Rich-based Markdown console renderer (mdcat) and helpers.},
       author={Joshua V. Dillon},
       year={2026},
