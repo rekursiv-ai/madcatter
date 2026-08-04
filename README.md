@@ -208,6 +208,20 @@ Sibling libraries in the [rekursiv-ai](https://github.com/rekursiv-ai) family:
 - [priml](https://github.com/rekursiv-ai/priml) — Composable PyTorch building blocks: models, optimizers, losses, and a step-based training loop.
 - [configgle](https://github.com/rekursiv-ai/configgle) — Hierarchical experiment configuration in typed pure-Python dataclasses instead of YAML.
 
+## Citing
+
+If you find our work useful, please consider citing:
+
+```bibtex
+@misc{rekursiv2026madcatter,
+      title={Madcatter - Rich-based Markdown console renderer (mdcat) and helpers.},
+      author={Joshua V. Dillon},
+      year={2026},
+      howpublished={Github},
+      url={https://github.com/rekursiv-ai/madcatter},
+}
+```
+
 ## License
 
 Apache License 2.0
