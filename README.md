@@ -221,7 +221,3 @@ If you find our work useful, please consider citing:
       url={https://github.com/rekursiv-ai/madcatter},
 }
 ```
-
-## License
-
-Apache License 2.0
