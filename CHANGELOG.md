@@ -5,10 +5,22 @@ All notable madcatter changes are documented here. This project follows
 
 ## Unreleased
 
-### Added
+## 0.1.3 - 2026-08-19
 
-- Commit B: baseline-divergence probe, first of two.
-- Commit C: baseline-divergence probe, second of two.
+### Fixed
+
+- A single-line code span written with triple backticks, such as
+  ```` ```x = 1``` ````, is no longer mistaken for the opening of a fenced
+  code block. CommonMark forbids backticks in a fence info string, so such
+  a line is inline code; treating it as a fence left the renderer stuck
+  "inside" a block for the rest of the file, which silently suppressed math
+  conversion and emoji expansion on every following line and hid every
+  following heading from the table of contents.
+
+- An unterminated fenced code block no longer discards the tail of the
+  document. Content buffered after the last unclosed fence is now emitted
+  instead of being dropped, so a file that ends mid-fence still renders in
+  full.
 
 ## 0.1.2 - 2026-08-01
 
