@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from unittest.mock import Mock
 
 from madcatter.latex import (
     _try_convert_fraction,
     latex2unicode,
 )
+
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_latex2unicode_basic_symbols():
@@ -234,14 +239,13 @@ def test_latex2unicode_chars_with_embedded_scripts():
     assert "ᵢ" in result or "i" in result
 
 
-def test_latex2unicode_exception_in_ast():
+def test_latex2unicode_exception_in_ast(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test exception handling in AST parsing (lines 224-226)."""
-    # Force an exception by creating deeply nested or malformed LaTeX
-    # that causes pylatexenc to fail during parsing
-    deeply_nested = r"\frac{" * 100 + "x" + "}" * 100
-    result = latex2unicode(deeply_nested)
-    # Should return original string on exception
-    assert isinstance(result, str)
+    monkeypatch.setattr(
+        "madcatter.latex._latex_to_unicode_ast",
+        Mock(side_effect=RuntimeError("parse failed")),
+    )
+    assert latex2unicode("original") == "original"
 
 
 def test_latex2unicode_script_no_conversion():
