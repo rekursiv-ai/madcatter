@@ -141,7 +141,9 @@ markers = [
     "gpu_torch_cuda: requires torch CUDA execution",
     "gpu_triton: requires Triton kernels",
     "network_anthropic: reaches Anthropic over the network",
+    "network_duckduckgo: reaches DuckDuckGo over the network",
     "network_gemini: reaches Gemini over the network",
+    "network_google_search: reaches Google Search over the network",
     "network_github: reaches GitHub over the network",
     "network_huggingface: reaches Hugging Face over the network",
     "network_kaggle: reaches Kaggle over the network",
@@ -173,6 +175,27 @@ norecursedirs = [
     "third_party",
     "typings",
 ]
+
+[tool.coverage.run]
+omit = [
+    "*_test.py",
+    "test_*.py",
+    "*/tests/*",
+    "*/.venv/*",
+    "*/typings/*",
+    "*/tools/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]
+# fail_under = 85
+show_missing = true
+skip_covered = true
 
 [tool.ruff]
 show-fixes = true
@@ -496,7 +519,7 @@ ignore-words = ".codespell-ignore"
 # Pre-commit exclude handles most skips. This covers direct CLI invocations.
 # Don't add new folder paths here -- add them to .pre-commit-config.yaml's
 # codespell exclude regex instead. This list is only for file patterns.
-skip = "htmlcov,.doctrees,*.pyc,*.ico,*.png,*.jpg,*.PNG,*.inv,*.dot,*.css,*.egg-info,uv.lock,__pycache__,.git,.venv,typings,**/third_party/,*.sql"
+skip = "htmlcov,.doctrees,*.pyc,*.ico,*.png,*.jpg,*.PNG,*.inv,*.dot,*.css,*.egg-info,uv.lock,__pycache__,.git,.venv,typings,**/third_party/"
 
 [tool.uv]
 package = true
