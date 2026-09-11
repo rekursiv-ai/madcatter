@@ -7198,10 +7198,10 @@ def resolve(shortcode: str) -> str | None:
     """Resolve a shortcode (with or without colons) to its Unicode character.
 
     Args:
-      shortcode: Shortcode.
+      shortcode: Emoji shortcode, with or without surrounding colons.
 
     Returns:
-      result: The str | None.
+      character: Unicode emoji character, or None if not found.
 
     """
     return EMOJI.get(shortcode.strip(":"))

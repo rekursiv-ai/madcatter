@@ -78,10 +78,10 @@ def to_ascii(text: str) -> str:
     """Convert Unicode text to ASCII.
 
     Args:
-      text: Text.
+      text: Unicode string to transform.
 
     Returns:
-      result: The str.
+      result: ASCII-safe string with box-drawing, quotes, and math substituted.
 
     """
     text = text.translate(_UNICODE_TO_ASCII_CHARS)
@@ -103,15 +103,7 @@ def to_ascii(text: str) -> str:
 
 
 def strip_trailing_whitespace(text: str) -> str:
-    """Strip trailing whitespace from each line.
-
-    Args:
-      text: Text.
-
-    Returns:
-      result: The str.
-
-    """
+    """Strip trailing whitespace from each line."""
     return "\n".join(line.rstrip() for line in text.split("\n"))
 
 
@@ -144,10 +136,10 @@ def process_emoji(text: str) -> str:
     """Replace :shortcode: with Unicode emoji, skipping code blocks.
 
     Args:
-      text: Text.
+      text: Markdown text to process.
 
     Returns:
-      result: The str.
+      result: Markdown with :shortcode: expanded to emoji outside fenced code.
 
     """
 
@@ -194,10 +186,10 @@ def extract_headings(markdown_body: str) -> list[tuple[int, str]]:
     """Extract headings from markdown with their levels.
 
     Args:
-      markdown_body: Markdown body.
+      markdown_body: Markdown text to parse.
 
     Returns:
-      headings: The list[tuple[int, str]].
+      headings: (level, title) pairs, 1-6 for H1-H6, extracted from code-block-aware scan.
 
     """
     headings: list[tuple[int, str]] = []
@@ -224,8 +216,8 @@ def render_toc(headings: list[tuple[int, str]], console: Console) -> None:
     """Render table of contents as a tree.
 
     Args:
-      headings: Headings.
-      console: Console.
+      headings: (level, title) pairs to display.
+      console: Rich Console to write the tree to.
 
     """
     tree = Tree("📑 Table of Contents", guide_style="dim")
@@ -249,10 +241,10 @@ def extract_links(markdown_body: str) -> list[str]:
     """Extract all URLs from markdown.
 
     Args:
-      markdown_body: Markdown body.
+      markdown_body: Markdown text to parse.
 
     Returns:
-      links: The list[str].
+      links: Unique href and src URLs found in links and images.
 
     """
     md = MarkdownIt()
@@ -276,8 +268,8 @@ def check_links(links: list[str], console: Console) -> None:
     """Check if URLs are reachable.
 
     Args:
-      links: Links.
-      console: Console.
+      links: URL strings to validate via HTTP HEAD.
+      console: Rich Console to write results to.
 
     """
     table = Table(title="Link Validation", show_header=True)
@@ -310,11 +302,11 @@ def extract_code_blocks(
     """Extract code blocks from markdown.
 
     Args:
-      markdown_body: Markdown body.
-      language_filter: Language filter.
+      markdown_body: Markdown text to parse.
+      language_filter: If given, return only blocks with this language tag.
 
     Returns:
-      code_blocks: The list[tuple[str | None, str]].
+      code_blocks: (language, code) tuples for fenced blocks matching the filter.
 
     """
     md = MarkdownIt()
@@ -336,13 +328,7 @@ def render_code_blocks(
     code_blocks: list[tuple[str | None, str]],
     console: Console,
 ) -> None:
-    """Render code blocks.
-
-    Args:
-      code_blocks: Code blocks.
-      console: Console.
-
-    """
+    """Render code blocks."""
     for i, (lang, code) in enumerate(code_blocks):
         if i > 0:
             console.print()
@@ -354,11 +340,11 @@ def filter_section(markdown_body: str, section_name: str) -> str:
     """Extract a specific section from markdown.
 
     Args:
-      markdown_body: Markdown body.
-      section_name: Section name.
+      markdown_body: Markdown text to parse.
+      section_name: Heading text to match (case-insensitive).
 
     Returns:
-      result: The str.
+      result: Lines from the matched heading down to the next same-or-higher level.
 
     """
     lines = markdown_body.split("\n")
@@ -390,9 +376,9 @@ def render_diff(file1: str, file2: str, console: Console) -> None:
     """Render diff between two markdown files.
 
     Args:
-      file1: File1.
-      file2: File2.
-      console: Console.
+      file1: Path to the first file.
+      file2: Path to the second file.
+      console: Rich Console to write colored diff to.
 
     """
     with (
@@ -433,11 +419,11 @@ def follow_file(
     the visible tail. Survives atomic rewrites (new inode).
 
     Args:
-      path: Path.
-      console: Console.
-      args: Args.
-      poll: Poll.
-      anchor_window: Anchor window.
+      path: File path to monitor; "-" not supported.
+      console: Rich Console to write appended lines to.
+      args: Argparse Namespace with rendering flags (no_frontmatter, follow_lines, etc).
+      poll: Sleep interval in seconds between file reads.
+      anchor_window: Max recent lines to track as checksums; buffers 32 hashes by default.
 
     """
     anchors: collections.deque[bytes] = collections.deque(maxlen=anchor_window)
@@ -492,10 +478,10 @@ def watch_file(
     """Watch file for changes and re-render.
 
     Args:
-      path: Path.
-      render_func: Render func.
-      console: Console.
-      args: Args.
+      path: File path to monitor; must exist.
+      render_func: Callable(path, console, args) -> str that renders the file.
+      console: Rich Console to clear and rewrite on each change.
+      args: Argparse Namespace with rendering flags.
 
     """
     last_mtime = 0.0
@@ -523,8 +509,8 @@ def export_html(markdown_body: str, output_path: str) -> None:
     """Export markdown as HTML.
 
     Args:
-      markdown_body: Markdown body.
-      output_path: Output path.
+      markdown_body: Markdown text to convert.
+      output_path: File path to write the rendered HTML document to.
 
     """
     md = MarkdownIt()
@@ -556,12 +542,12 @@ def render_markdown_file(path: str, console: Console, args: argparse.Namespace) 
     """Read and render a markdown file, returning the body.
 
     Args:
-      path: Path.
-      console: Console.
-      args: Args.
+      path: File path or "-" for stdin.
+      console: Rich Console to write rendered output to.
+      args: Argparse Namespace with display mode flags (toc, links, section, etc).
 
     Returns:
-      markdown_body: The str.
+      markdown_body: Processed markdown string before rendering.
 
     """
     if path == "-":
@@ -655,12 +641,7 @@ def render_markdown_file(path: str, console: Console, args: argparse.Namespace) 
 
 
 def main() -> int:
-    """Entry point; exit quietly if a pipe reader (e.g. `less`) quits early.
-
-    Returns:
-      result: The int.
-
-    """
+    """Entry point; exit quietly if a pipe reader (e.g. `less`) quits early."""
     try:
         return _main()
     except BrokenPipeError:
