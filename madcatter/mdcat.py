@@ -37,7 +37,7 @@ from rich.tree import Tree
 
 import requests
 
-from madcatter.emoji import resolve as resolve_emoji
+from madcatter.emoji import resolve
 from madcatter.markdown import (
     is_fence_delimiter,
     process_math_blocks,
@@ -45,13 +45,13 @@ from madcatter.markdown import (
 )
 
 
-# Unicode to ASCII translation for printable output
+# Unicode to ASCII translation for printable output.
 _UNICODE_TO_ASCII_CHARS = str.maketrans(
     {
         "\u2501": "-",
         "\u2500": "-",
         "\u2502": "|",
-        "\u2503": "|",  # box drawing
+        "\u2503": "|",  # box drawing.
         "\u250c": "+",
         "\u2510": "+",
         "\u2514": "+",
@@ -63,23 +63,31 @@ _UNICODE_TO_ASCII_CHARS = str.maketrans(
         "\u253c": "+",
         "\u2022": "*",
         "\u00b7": ".",
-        "\u2013": "-",  # bullet, middle dot, en-dash
+        "\u2013": "-",  # bullet, middle dot, en-dash.
         "\u2018": "'",
         "\u2019": "'",
         "\u201c": '"',
-        "\u201d": '"',  # curly quotes
+        "\u201d": '"',  # curly quotes.
         "\u00d7": "x",
-        "\u00f7": "/",  # multiply, divide
+        "\u00f7": "/",  # multiply, divide.
     },
 )
 
 
 def to_ascii(text: str) -> str:
-    """Convert Unicode text to ASCII."""
+    """Convert Unicode text to ASCII.
+
+    Args:
+      text: Text.
+
+    Returns:
+      result: The str.
+
+    """
     text = text.translate(_UNICODE_TO_ASCII_CHARS)
     for uni, asc in (
         ("…", "..."),
-        ("—", "--"),
+        ("--", "--"),
         ("±", "+/-"),
         ("→", "->"),
         ("←", "<-"),
@@ -95,7 +103,15 @@ def to_ascii(text: str) -> str:
 
 
 def strip_trailing_whitespace(text: str) -> str:
-    """Strip trailing whitespace from each line."""
+    """Strip trailing whitespace from each line.
+
+    Args:
+      text: Text.
+
+    Returns:
+      result: The str.
+
+    """
     return "\n".join(line.rstrip() for line in text.split("\n"))
 
 
@@ -125,10 +141,18 @@ _EMOJI_RE = re.compile(r":([a-z0-9_+\-]+):")
 
 
 def process_emoji(text: str) -> str:
-    """Replace :shortcode: with Unicode emoji, skipping code blocks."""
+    """Replace :shortcode: with Unicode emoji, skipping code blocks.
+
+    Args:
+      text: Text.
+
+    Returns:
+      result: The str.
+
+    """
 
     def _replace(match: re.Match[str]) -> str:
-        resolved = resolve_emoji(match.group(1))
+        resolved = resolve(match.group(1))
         return resolved if resolved is not None else match.group(0)
 
     lines = text.split("\n")
@@ -145,7 +169,7 @@ def process_emoji(text: str) -> str:
     return "\n".join(result)
 
 
-# Style profiles
+# Style profiles.
 STYLE_PROFILES: Final = {
     "dark": {
         "code_theme": "monokai",
@@ -167,17 +191,25 @@ STYLE_PROFILES: Final = {
 
 
 def extract_headings(markdown_body: str) -> list[tuple[int, str]]:
-    """Extract headings from markdown with their levels."""
+    """Extract headings from markdown with their levels.
+
+    Args:
+      markdown_body: Markdown body.
+
+    Returns:
+      headings: The list[tuple[int, str]].
+
+    """
     headings: list[tuple[int, str]] = []
     in_code_block = False
 
     for line in markdown_body.split("\n"):
-        # Track code block boundaries
+        # Track code block boundaries.
         if is_fence_delimiter(line):
             in_code_block = not in_code_block
             continue
 
-        # Skip lines inside code blocks
+        # Skip lines inside code blocks.
         if in_code_block:
             continue
 
@@ -189,16 +221,22 @@ def extract_headings(markdown_body: str) -> list[tuple[int, str]]:
 
 
 def render_toc(headings: list[tuple[int, str]], console: Console) -> None:
-    """Render table of contents as a tree."""
+    """Render table of contents as a tree.
+
+    Args:
+      headings: Headings.
+      console: Console.
+
+    """
     tree = Tree("📑 Table of Contents", guide_style="dim")
     stack: list[tuple[int, Tree]] = [(0, tree)]
 
     for level, title in headings:
-        # Pop from stack until we find the parent level
+        # Pop from stack until we find the parent level.
         while stack and stack[-1][0] >= level:
             stack.pop()
 
-        # Add node under current parent
+        # Add node under current parent.
         parent_tree = stack[-1][1] if stack else tree
         node = parent_tree.add(f"[bold]{title}[/bold]")
         stack.append((level, node))
@@ -208,7 +246,15 @@ def render_toc(headings: list[tuple[int, str]], console: Console) -> None:
 
 
 def extract_links(markdown_body: str) -> list[str]:
-    """Extract all URLs from markdown."""
+    """Extract all URLs from markdown.
+
+    Args:
+      markdown_body: Markdown body.
+
+    Returns:
+      links: The list[str].
+
+    """
     md = MarkdownIt()
     tokens = md.parse(markdown_body)
 
@@ -227,13 +273,19 @@ def extract_links(markdown_body: str) -> list[str]:
 
 
 def check_links(links: list[str], console: Console) -> None:
-    """Check if URLs are reachable."""
+    """Check if URLs are reachable.
+
+    Args:
+      links: Links.
+      console: Console.
+
+    """
     table = Table(title="Link Validation", show_header=True)
     table.add_column("URL", style="cyan")
     table.add_column("Status", style="green")
 
     for link in links:
-        # Skip relative/anchor links
+        # Skip relative/anchor links.
         parsed = urlparse(link)
         if not parsed.scheme or parsed.scheme not in ("http", "https"):
             table.add_row(link, "[dim]skipped (not http/s)[/dim]")
@@ -255,7 +307,16 @@ def extract_code_blocks(
     markdown_body: str,
     language_filter: str | None = None,
 ) -> list[tuple[str | None, str]]:
-    """Extract code blocks from markdown."""
+    """Extract code blocks from markdown.
+
+    Args:
+      markdown_body: Markdown body.
+      language_filter: Language filter.
+
+    Returns:
+      code_blocks: The list[tuple[str | None, str]].
+
+    """
     md = MarkdownIt()
     tokens = md.parse(markdown_body)
 
@@ -275,7 +336,13 @@ def render_code_blocks(
     code_blocks: list[tuple[str | None, str]],
     console: Console,
 ) -> None:
-    """Render code blocks."""
+    """Render code blocks.
+
+    Args:
+      code_blocks: Code blocks.
+      console: Console.
+
+    """
     for i, (lang, code) in enumerate(code_blocks):
         if i > 0:
             console.print()
@@ -284,7 +351,16 @@ def render_code_blocks(
 
 
 def filter_section(markdown_body: str, section_name: str) -> str:
-    """Extract a specific section from markdown."""
+    """Extract a specific section from markdown.
+
+    Args:
+      markdown_body: Markdown body.
+      section_name: Section name.
+
+    Returns:
+      result: The str.
+
+    """
     lines = markdown_body.split("\n")
     section_lines: list[str] = []
     in_section = False
@@ -300,7 +376,7 @@ def filter_section(markdown_body: str, section_name: str) -> str:
                 section_level = level
                 section_lines.append(line)
             elif in_section and level <= section_level:
-                # Hit a same-or-higher level heading, end of section
+                # Hit a same-or-higher level heading, end of section.
                 break
             elif in_section:
                 section_lines.append(line)
@@ -311,7 +387,14 @@ def filter_section(markdown_body: str, section_name: str) -> str:
 
 
 def render_diff(file1: str, file2: str, console: Console) -> None:
-    """Render diff between two markdown files."""
+    """Render diff between two markdown files.
+
+    Args:
+      file1: File1.
+      file2: File2.
+      console: Console.
+
+    """
     with (
         Path(file1).open(encoding="utf-8") as f1,
         Path(file2).open(encoding="utf-8") as f2,
@@ -335,24 +418,6 @@ def render_diff(file1: str, file2: str, console: Console) -> None:
             console.print(stripped, style="dim")
 
 
-def _line_hash(line: str) -> bytes:
-    return hashlib.blake2b(line.encode("utf-8"), digest_size=16).digest()
-
-
-def _find_anchor_index(
-    lines: list[str],
-    anchors: collections.deque[bytes],
-) -> int | None:
-    """Return the highest index in ``lines`` whose hash is in ``anchors``."""
-    if not anchors:
-        return None
-    anchor_set = set(anchors)
-    for i in range(len(lines) - 1, -1, -1):
-        if _line_hash(lines[i]) in anchor_set:
-            return i
-    return None
-
-
 def follow_file(
     path: str,
     console: Console,
@@ -366,31 +431,24 @@ def follow_file(
     the file, finds the most recent anchor still present, and emits only
     the lines after it. If no anchor survives, prints a rule and re-emits
     the visible tail. Survives atomic rewrites (new inode).
+
+    Args:
+      path: Path.
+      console: Console.
+      args: Args.
+      poll: Poll.
+      anchor_window: Anchor window.
+
     """
     anchors: collections.deque[bytes] = collections.deque(maxlen=anchor_window)
     first = True
     last_data = b""
     console.print(f"[dim]Following {path} (Ctrl+C to quit)...[/dim]\n")
 
-    def _render_line(line: str) -> None:
-        body = process_emoji(line)
-        body = process_math_blocks(body, enable_math=args.math)
-        console.print(
-            Markdown(
-                body,
-                justify="full" if args.justify else "left",
-                code_theme=args.code_theme,
-                hyperlinks=args.hyperlinks,
-                inline_code_lexer=args.inline_code_lexer,
-            ),
-        )
-
     try:
         while True:
-            try:
-                with Path(path).open("rb") as fh:
-                    data = fh.read()
-            except FileNotFoundError:
+            data = _read_or_none(path)
+            if data is None:
                 time.sleep(poll)
                 continue
 
@@ -417,7 +475,7 @@ def follow_file(
             for line in tail:
                 if not line.strip():
                     continue
-                _render_line(line)
+                _render_line(console, args, line)
                 anchors.append(_line_hash(line))
 
             time.sleep(poll)
@@ -431,23 +489,30 @@ def watch_file(
     console: Console,
     args: argparse.Namespace,
 ) -> None:
-    """Watch file for changes and re-render."""
+    """Watch file for changes and re-render.
+
+    Args:
+      path: Path.
+      render_func: Render func.
+      console: Console.
+      args: Args.
+
+    """
     last_mtime = 0.0
     console.print(f"[dim]Watching {path} for changes (Ctrl+C to quit)...[/dim]\n")
 
     try:
         while True:
-            try:
-                current_mtime = Path(path).stat().st_mtime
-                if current_mtime != last_mtime:
-                    last_mtime = current_mtime
-                    console.clear()
-                    console.print(
-                        f"[dim]Updated at {time.strftime('%H:%M:%S')}[/dim]\n",
-                    )
-                    render_func(path, console, args)
-            except FileNotFoundError:
+            current_mtime = _mtime_or_none(path)
+            if current_mtime is None:
                 console.print(f"[red]File {path} not found[/red]")
+            elif current_mtime != last_mtime:
+                last_mtime = current_mtime
+                console.clear()
+                console.print(
+                    f"[dim]Updated at {time.strftime('%H:%M:%S')}[/dim]\n",
+                )
+                render_func(path, console, args)
 
             time.sleep(1)
     except KeyboardInterrupt:
@@ -455,7 +520,13 @@ def watch_file(
 
 
 def export_html(markdown_body: str, output_path: str) -> None:
-    """Export markdown as HTML."""
+    """Export markdown as HTML.
+
+    Args:
+      markdown_body: Markdown body.
+      output_path: Output path.
+
+    """
     md = MarkdownIt()
     html = md.render(markdown_body)
 
@@ -481,42 +552,40 @@ def export_html(markdown_body: str, output_path: str) -> None:
         f.write(html_template)
 
 
-def _exit_on_broken_pipe() -> NoReturn:
-    """Exit(0) cleanly after a downstream reader closed the pipe.
-
-    Redirect the remaining stdout to /dev/null so the interpreter's
-    final flush at shutdown does not re-raise BrokenPipeError. See
-    https://docs.python.org/3/library/signal.html#note-on-sigpipe.
-    """
-    devnull = os.open(os.devnull, os.O_WRONLY)
-    os.dup2(devnull, sys.stdout.fileno())
-    raise SystemExit(0)
-
-
 def render_markdown_file(path: str, console: Console, args: argparse.Namespace) -> str:
-    """Read and render a markdown file, returning the body."""
+    """Read and render a markdown file, returning the body.
+
+    Args:
+      path: Path.
+      console: Console.
+      args: Args.
+
+    Returns:
+      markdown_body: The str.
+
+    """
     if path == "-":
         markdown_body = sys.stdin.read()
     else:
         with Path(path).open(encoding="utf-8") as markdown_file:
             markdown_body = markdown_file.read()
 
-    # Strip YAML frontmatter if requested
+    # Strip YAML frontmatter if requested.
     if args.no_frontmatter:
         markdown_body = "\n".join(strip_frontmatter(markdown_body.splitlines()))
 
-    # Process emoji shortcodes and math blocks
+    # Process emoji shortcodes and math blocks.
     markdown_body = process_emoji(markdown_body)
     markdown_body = process_math_blocks(markdown_body, enable_math=args.math)
 
-    # Apply section filter if specified
+    # Apply section filter if specified.
     if args.section:
         markdown_body = filter_section(markdown_body, args.section)
         if not markdown_body:
             console.print(f"[red]Section '{args.section}' not found[/red]")
             return ""
 
-    # Handle various display modes
+    # Handle various display modes.
     if args.toc:
         headings = extract_headings(markdown_body)
         render_toc(headings, console)
@@ -545,7 +614,7 @@ def render_markdown_file(path: str, console: Console, args: argparse.Namespace) 
             console.print("[dim]No code blocks found[/dim]")
         return markdown_body
 
-    # Regular markdown rendering
+    # Regular markdown rendering.
     markdown = Markdown(
         markdown_body,
         justify="full" if args.justify else "left",
@@ -583,6 +652,176 @@ def render_markdown_file(path: str, console: Console, args: argparse.Namespace) 
         console.file.write(output)
 
     return markdown_body
+
+
+def main() -> int:
+    """Entry point; exit quietly if a pipe reader (e.g. `less`) quits early.
+
+    Returns:
+      result: The int.
+
+    """
+    try:
+        return _main()
+    except BrokenPipeError:
+        _exit_on_broken_pipe()
+
+
+def _main() -> int:
+    parser = argparse.ArgumentParser(
+        description=(__doc__ or "").strip(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    args, remaining = _parse_args(parser)
+    if remaining:
+        parser.error(f"unrecognized arguments: {' '.join(remaining)}")
+
+    # --code-lang implies --code-only.
+    if args.code_lang:
+        if args.toc or args.links or args.check_links:
+            parser.error(
+                "--code-lang cannot be used with --toc, --links, or --check-links",
+            )
+        args.code_only = True
+
+    # Validate incompatible flags.
+    if args.page and args.watch:
+        parser.error("--page and --watch cannot be used together")
+    if args.follow and args.watch:
+        parser.error("--follow and --watch are mutually exclusive")
+    if args.follow and args.page:
+        parser.error("--page and --follow cannot be used together")
+    if args.follow and (args.toc or args.links or args.check_links or args.code_only):
+        parser.error(
+            "--follow cannot be combined with --toc/--links/--check-links/--code-only",
+        )
+
+    # Apply style profile.
+    if args.style:
+        profile = STYLE_PROFILES[args.style]
+        args.code_theme = profile["code_theme"]
+
+    # Create console - capture to StringIO for --ascii mode.
+    ascii_buffer = io.StringIO() if args.ascii else None
+    console = Console(
+        file=ascii_buffer,
+        force_terminal=False if args.ascii else args.force_color,
+        width=args.width,
+        record=True,
+    )
+
+    # Handle diff mode.
+    if args.diff:
+        if not args.path or len(args.path) != 1:
+            console.print("[red]Error: --diff requires exactly one file argument[/red]")
+            sys.exit(1)
+        render_diff(args.path[0], args.diff, console)
+        return 0
+
+    # Ensure we have at least one file.
+    if not args.path:
+        args.path = ["-"]
+
+    # Handle watch mode.
+    if args.watch:
+        if len(args.path) != 1 or args.path[0] == "-":
+            console.print("[red]Error: --watch requires exactly one file path[/red]")
+            sys.exit(1)
+        watch_file(args.path[0], render_markdown_file, console, args)
+        return 0
+
+    # Handle follow mode.
+    if args.follow:
+        if len(args.path) != 1 or args.path[0] == "-":
+            console.print("[red]Error: --follow requires exactly one file path[/red]")
+            sys.exit(1)
+        follow_file(args.path[0], console, args)
+        return 0
+
+    # Process files.
+    markdown_bodies: list[str] = []
+    for i, path in enumerate(args.path):
+        if i > 0 and args.separator:
+            console.print(Rule(style="dim"))
+
+        markdown_body = render_markdown_file(path, console, args)
+        markdown_bodies.append(markdown_body)
+
+    # Handle exports.
+    combined_body = "\n\n".join(markdown_bodies)
+
+    if args.export_html:
+        export_html(combined_body, args.export_html)
+        console.print(f"[green]Exported HTML to {args.export_html}[/green]")
+
+    if args.export_ansi:
+        with Path(args.export_ansi).open("w", encoding="utf-8") as f:
+            f.write(console.export_text())
+        console.print(f"[green]Exported ANSI to {args.export_ansi}[/green]")
+
+    # Output ASCII-converted text.
+    if ascii_buffer is not None:
+        print(to_ascii(ascii_buffer.getvalue()), end="")  # noqa: T201
+    return 0
+
+
+def _line_hash(line: str) -> bytes:
+    return hashlib.blake2b(line.encode("utf-8"), digest_size=16).digest()
+
+
+def _find_anchor_index(
+    lines: list[str],
+    anchors: collections.deque[bytes],
+) -> int | None:
+    """Return the highest index in ``lines`` whose hash is in ``anchors``."""
+    if not anchors:
+        return None
+    anchor_set = set(anchors)
+    for i in range(len(lines) - 1, -1, -1):
+        if _line_hash(lines[i]) in anchor_set:
+            return i
+    return None
+
+
+def _render_line(console: Console, args: argparse.Namespace, line: str) -> None:
+    """Print one markdown line with the CLI's rendering options."""
+    body = process_emoji(line)
+    body = process_math_blocks(body, enable_math=args.math)
+    console.print(
+        Markdown(
+            body,
+            justify="full" if args.justify else "left",
+            code_theme=args.code_theme,
+            hyperlinks=args.hyperlinks,
+            inline_code_lexer=args.inline_code_lexer,
+        ),
+    )
+
+
+def _read_or_none(path: str) -> bytes | None:
+    """Read the file's bytes; None while it does not exist yet."""
+    try:
+        return Path(path).read_bytes()
+    except FileNotFoundError:
+        return None
+
+
+def _mtime_or_none(path: str) -> float | None:
+    """Read the file's mtime; None while it does not exist."""
+    try:
+        return Path(path).stat().st_mtime
+    except FileNotFoundError:
+        return None
+
+
+# Redirect the remaining stdout to /dev/null so the interpreter's final flush at
+# shutdown does not re-raise BrokenPipeError. See.
+# https://docs.python.org/3/library/signal.html#note-on-sigpipe.
+def _exit_on_broken_pipe() -> NoReturn:
+    """Exit(0) cleanly after a downstream reader closed the pipe."""
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    os.dup2(devnull, sys.stdout.fileno())
+    raise SystemExit(0)
 
 
 def _parse_args(
@@ -768,109 +1007,3 @@ def _parse_args(
         help="disable math rendering (default: enabled)",
     )
     return parser.parse_known_args(argv)
-
-
-def main() -> int:
-    """Entry point; exit quietly if a pipe reader (e.g. `less`) quits early."""
-    try:
-        return _main()
-    except BrokenPipeError:
-        _exit_on_broken_pipe()
-
-
-def _main() -> int:
-    parser = argparse.ArgumentParser(
-        description=(__doc__ or "").strip(),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    args, remaining = _parse_args(parser)
-    if remaining:
-        parser.error(f"unrecognized arguments: {' '.join(remaining)}")
-
-    # --code-lang implies --code-only
-    if args.code_lang:
-        if args.toc or args.links or args.check_links:
-            parser.error(
-                "--code-lang cannot be used with --toc, --links, or --check-links",
-            )
-        args.code_only = True
-
-    # Validate incompatible flags
-    if args.page and args.watch:
-        parser.error("--page and --watch cannot be used together")
-    if args.follow and args.watch:
-        parser.error("--follow and --watch are mutually exclusive")
-    if args.follow and args.page:
-        parser.error("--page and --follow cannot be used together")
-    if args.follow and (args.toc or args.links or args.check_links or args.code_only):
-        parser.error(
-            "--follow cannot be combined with --toc/--links/--check-links/--code-only",
-        )
-
-    # Apply style profile
-    if args.style:
-        profile = STYLE_PROFILES[args.style]
-        args.code_theme = profile["code_theme"]
-
-    # Create console - capture to StringIO for --ascii mode
-    ascii_buffer = io.StringIO() if args.ascii else None
-    console = Console(
-        file=ascii_buffer,
-        force_terminal=False if args.ascii else args.force_color,
-        width=args.width,
-        record=True,
-    )
-
-    # Handle diff mode
-    if args.diff:
-        if not args.path or len(args.path) != 1:
-            console.print("[red]Error: --diff requires exactly one file argument[/red]")
-            sys.exit(1)
-        render_diff(args.path[0], args.diff, console)
-        return 0
-
-    # Ensure we have at least one file
-    if not args.path:
-        args.path = ["-"]
-
-    # Handle watch mode
-    if args.watch:
-        if len(args.path) != 1 or args.path[0] == "-":
-            console.print("[red]Error: --watch requires exactly one file path[/red]")
-            sys.exit(1)
-        watch_file(args.path[0], render_markdown_file, console, args)
-        return 0
-
-    # Handle follow mode
-    if args.follow:
-        if len(args.path) != 1 or args.path[0] == "-":
-            console.print("[red]Error: --follow requires exactly one file path[/red]")
-            sys.exit(1)
-        follow_file(args.path[0], console, args)
-        return 0
-
-    # Process files
-    markdown_bodies: list[str] = []
-    for i, path in enumerate(args.path):
-        if i > 0 and args.separator:
-            console.print(Rule(style="dim"))
-
-        markdown_body = render_markdown_file(path, console, args)
-        markdown_bodies.append(markdown_body)
-
-    # Handle exports
-    combined_body = "\n\n".join(markdown_bodies)
-
-    if args.export_html:
-        export_html(combined_body, args.export_html)
-        console.print(f"[green]Exported HTML to {args.export_html}[/green]")
-
-    if args.export_ansi:
-        with Path(args.export_ansi).open("w", encoding="utf-8") as f:
-            f.write(console.export_text())
-        console.print(f"[green]Exported ANSI to {args.export_ansi}[/green]")
-
-    # Output ASCII-converted text
-    if ascii_buffer is not None:
-        print(to_ascii(ascii_buffer.getvalue()), end="")  # noqa: T201
-    return 0

@@ -6929,7 +6929,7 @@ _COMMON: Mapping[str, str] = MappingProxyType(
         "women_wrestling_tone5-2": "👩🏿\u200d\U0001faef\u200d👩🏼",
         "women_wrestling_tone5-3": "👩🏿\u200d\U0001faef\u200d👩🏽",
         "women_wrestling_tone5-4": "👩🏿\u200d\U0001faef\u200d👩🏾",
-        "womens": "🚺",  # codespell:ignore womens
+        "womens": "🚺",  # codespell:ignore womens.
         "womens_room": "🚺",
         "wood": "🪵",
         "woozy": "🥴",
@@ -7195,5 +7195,13 @@ EMOJI: Mapping[str, str] = MappingProxyType(
 
 
 def resolve(shortcode: str) -> str | None:
-    """Resolve a shortcode (with or without colons) to its Unicode character."""
+    """Resolve a shortcode (with or without colons) to its Unicode character.
+
+    Args:
+      shortcode: Shortcode.
+
+    Returns:
+      result: The str | None.
+
+    """
     return EMOJI.get(shortcode.strip(":"))

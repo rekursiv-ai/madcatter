@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from madcatter.markdown import process_math_blocks, strip_frontmatter
 
 
@@ -119,4 +117,6 @@ def test_strip_frontmatter_unterminated():
 
 
 if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+    from madcatter.lib.testing.main import test_main
+
+    test_main(__file__)
