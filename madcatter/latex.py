@@ -16,19 +16,19 @@ from pylatexenc.latexwalker import (
 )
 
 
-# Additional LaTeX symbol mappings not handled by pylatexenc
+# Additional LaTeX symbol mappings not handled by pylatexenc.
 _EXTRA_SYMBOLS: Final = {
     "|": "‖",  # U+2016 double vertical line (norm)
-    "Vert": "‖",  # U+2016 double vertical line (norm) - alias
-    "lVert": "‖",  # U+2016 left double vertical line
-    "rVert": "‖",  # U+2016 right double vertical line
-    "implies": "⟹",  # U+27F9 long double rightarrow
-    "iff": "⟺",  # U+27FA long double leftrightarrow
-    "impliedby": "⟸",  # U+27F8 long double leftarrow
-    "coloneqq": "≔",  # U+2254 colon equals
-    "eqqcolon": "≕",  # U+2255 equals colon
-    "bigodot": "⨀",  # U+2A00 n-ary circled dot operator
-    # todos
+    "Vert": "‖",  # U+2016 double vertical line (norm) - alias.
+    "lVert": "‖",  # U+2016 left double vertical line.
+    "rVert": "‖",  # U+2016 right double vertical line.
+    "implies": "⟹",  # U+27F9 long double rightarrow.
+    "iff": "⟺",  # U+27FA long double leftrightarrow.
+    "impliedby": "⟸",  # U+27F8 long double leftarrow.
+    "coloneqq": "≔",  # U+2254 colon equals.
+    "eqqcolon": "≕",  # U+2255 equals colon.
+    "bigodot": "⨀",  # U+2A00 n-ary circled dot operator.
+    # Todos.
     "checkmark": "✓",
     "xmark": "✗",
     "checkmarkemoji": "✅",
@@ -40,7 +40,7 @@ _EXTRA_SYMBOLS: Final = {
     "done": "☒",
     "todo": "☐",
     "warning": "⚠",
-    # emoji
+    # Emoji.
     "smiley": "☺",
     "frowny": "☹",
     "cool": "😎",
@@ -58,17 +58,17 @@ _EXTRA_SYMBOLS: Final = {
     "brain": "🧠",
     "shrug": "🤷",
     "facepalm": "🤦",
-    # reference
+    # Reference.
     "bullet": "•",
     "star": "★",
     "dagger": "†",
     "ddagger": "‡",
-    # cards
+    # Cards.
     "spadesuit": "♠",
     "clubsuit": "♣",
     "diamondsuit": "♦",
     "heartsuit": "♥",
-    # misc
+    # Misc.
     "sparkles": "✨",
     "boom": "💥",
     "celebrate": "🙌",
@@ -77,7 +77,7 @@ _EXTRA_SYMBOLS: Final = {
 }
 
 
-# Unicode superscript mappings
+# Unicode superscript mappings.
 _SUPERSCRIPTS: Final = {
     "0": "⁰",
     "1": "¹",
@@ -140,7 +140,7 @@ _SUPERSCRIPTS: Final = {
     "U": "ᵁ",
     "V": "ⱽ",
     "W": "ᵂ",
-    # Greek letters
+    # Greek letters.
     "α": "ᵅ",
     "β": "ᵝ",
     "γ": "ᵞ",
@@ -239,7 +239,7 @@ def latex2unicode(latex: str) -> str:
       '∑ᵢ₌₁ⁿ xᵢ²'
 
     """
-    # Strip common delimiters if present
+    # Strip common delimiters if present.
     latex = latex.strip()
     if latex.startswith("$$") and latex.endswith("$$"):
         latex = latex[2:-2].strip()
@@ -251,45 +251,28 @@ def latex2unicode(latex: str) -> str:
         latex = latex[2:-2].strip()
 
     try:
-        # Use AST-based conversion for proper subscript/superscript handling
+        # Use AST-based conversion for proper subscript/superscript handling.
         return _latex_to_unicode_ast(latex)
     except Exception:  # noqa: BLE001
-        # If conversion fails, return original LaTeX
+        # If conversion fails, return original LaTeX.
         return latex
 
 
+# This properly handles subscripts/superscripts by parsing the LaTeX structure.
 def _latex_to_unicode_ast(latex: str) -> str:
-    """Convert LaTeX to Unicode using AST parsing.
-
-    This properly handles subscripts/superscripts by parsing the LaTeX structure.
-
-    Args:
-      latex: LaTeX string without delimiters
-
-    Returns:
-      unicode_math: Unicode representation
-
-    """
-    # Parse LaTeX into AST
+    """Convert LaTeX to Unicode using AST parsing."""
+    # Parse LaTeX into AST.
     walker = latexwalker.LatexWalker(latex)
     nodes, _, _ = walker.get_latex_nodes()
 
-    # Convert AST to Unicode
+    # Convert AST to Unicode.
     result = _nodes_to_unicode(nodes)
 
     return result
 
 
 def _process_chars_with_scripts(chars: str) -> str:
-    """Process character string containing unbraced ^x or _x patterns.
-
-    Args:
-      chars: String potentially containing ^ or _ followed by single character
-
-    Returns:
-      processed: String with super/subscripts converted to Unicode
-
-    """
+    """Process character string containing unbraced ^x or _x patterns."""
     converter = LatexNodes2Text()
     unicode_text = str(converter.latex_to_text(chars))
     return _convert_scripts(unicode_text)
@@ -332,7 +315,7 @@ def _process_chars_node(
 ) -> tuple[str, int]:
     chars = str(node.chars)
 
-    # Handle trailing ^ or _ followed by group/macro
+    # Handle trailing ^ or _ followed by group/macro.
     if chars.endswith(("^", "_")):
         result, skip = _try_handle_script_after_chars(chars, nodes, i, converter)
         if result:
@@ -342,7 +325,7 @@ def _process_chars_node(
     if "^" in chars or "_" in chars:
         return _process_chars_with_scripts(chars), 1
 
-    # Regular character sequence
+    # Regular character sequence.
     return str(converter.latex_to_text(chars)), 1
 
 
@@ -382,21 +365,21 @@ def _process_macro_node(
 ) -> tuple[str, int]:
     macro_name = str(node.macroname)
 
-    # Check custom symbols
+    # Check custom symbols.
     if macro_name in _EXTRA_SYMBOLS:
         return _EXTRA_SYMBOLS[macro_name], 1
 
-    # Handle fractions specially
+    # Handle fractions specially.
     if macro_name == "frac":
         result = _try_convert_fraction(node)
         if result:
             return result, 1
 
-    # Convert macro normally
+    # Convert macro normally.
     macro_latex = _reconstruct_macro_latex(node)
     unicode_text = str(converter.latex_to_text(macro_latex))
 
-    # Check if followed by ^{...} or _{...}
+    # Check if followed by ^{...} or _{...}.
     result, skip = _try_handle_script_after_macro(unicode_text, nodes, i)
     if result:
         return result, skip
@@ -474,16 +457,7 @@ def _reconstruct_nodes_latex(nodes: list[LatexNode]) -> str:
 
 
 def _convert_fraction(numer: str, denom: str) -> str:
-    """Convert fraction to Unicode if available.
-
-    Args:
-      numer: Numerator text
-      denom: Denominator text
-
-    Returns:
-      unicode_frac: Unicode fraction or fallback to "numer/denom"
-
-    """
+    """Convert fraction to Unicode if available."""
     frac_unicode = _FRACTIONS.get((numer, denom))
     if frac_unicode:
         return frac_unicode
@@ -496,18 +470,7 @@ def _convert_to_script(
     open_paren: str,
     close_paren: str,
 ) -> str:
-    """Convert content to Unicode super/subscript.
-
-    Args:
-      content: Text to convert
-      mapping: Character mapping dict (superscripts or subscripts)
-      open_paren: Opening parenthesis character (⁽ or ₍)
-      close_paren: Closing parenthesis character (⁾ or ₎)
-
-    Returns:
-      converted: Unicode super/subscript text
-
-    """
+    """Convert content to Unicode super/subscript."""
     result: list[str] = []
     unsupported: list[str] = []
     for c in content:
@@ -536,15 +499,7 @@ def _convert_subscript_match(match: re.Match[str]) -> str:
 
 
 def _convert_scripts(text: str) -> str:
-    """Convert ^x and _x notation to Unicode super/subscripts.
-
-    Args:
-      text: Text with ^x (superscript) and _x (subscript) notation
-
-    Returns:
-      text: Text with Unicode super/subscripts
-
-    """
+    """Convert ^x and _x notation to Unicode super/subscripts."""
     # Match super/subscripts: ^{...} or ^xyz (until whitespace)
     # Include Greek, math operators (set/logic symbols), brackets, braces, and common symbols
     # This handles both LaTeX braced form and pylatexenc's stripped form
