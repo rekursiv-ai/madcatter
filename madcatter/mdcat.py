@@ -51,7 +51,7 @@ _UNICODE_TO_ASCII_CHARS = str.maketrans(
         "\u2501": "-",
         "\u2500": "-",
         "\u2502": "|",
-        "\u2503": "|",  # box drawing.
+        "\u2503": "|",  # Box drawing.
         "\u250c": "+",
         "\u2510": "+",
         "\u2514": "+",
@@ -63,13 +63,13 @@ _UNICODE_TO_ASCII_CHARS = str.maketrans(
         "\u253c": "+",
         "\u2022": "*",
         "\u00b7": ".",
-        "\u2013": "-",  # bullet, middle dot, en-dash.
+        "\u2013": "-",  # Bullet, middle dot, en-dash.
         "\u2018": "'",
         "\u2019": "'",
         "\u201c": '"',
-        "\u201d": '"',  # curly quotes.
+        "\u201d": '"',  # Curly quotes.
         "\u00d7": "x",
-        "\u00f7": "/",  # multiply, divide.
+        "\u00f7": "/",  # Multiply, divide.
     },
 )
 
