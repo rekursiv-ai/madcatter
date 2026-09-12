@@ -22,10 +22,17 @@ class ParsedMacroArgs:
 
 class MacroStandardArgsParser:
     def __init__(
-        self, argspec=..., optional_arg_no_space=..., args_math_mode=..., **kwargs
+        self,
+        argspec=...,
+        optional_arg_no_space=...,
+        args_math_mode=...,
+        **kwargs,
     ) -> None: ...
     def parse_args(
-        self, w, pos, parsing_state=...
+        self,
+        w,
+        pos,
+        parsing_state=...,
     ):  # -> tuple[ParsedMacroArgs, Any, Any]:
         ...
     def __repr__(self):  # -> str:
@@ -33,7 +40,10 @@ class MacroStandardArgsParser:
 
 class ParsedVerbatimArgs(ParsedMacroArgs):
     def __init__(
-        self, verbatim_chars_node, verbatim_delimiters=..., **kwargs
+        self,
+        verbatim_chars_node,
+        verbatim_delimiters=...,
+        **kwargs,
     ) -> None: ...
     def __repr__(self):  # -> str:
         ...
@@ -41,7 +51,10 @@ class ParsedVerbatimArgs(ParsedMacroArgs):
 class VerbatimArgsParser(MacroStandardArgsParser):
     def __init__(self, verbatim_arg_type, **kwargs) -> None: ...
     def parse_args(
-        self, w, pos, parsing_state=...
+        self,
+        w,
+        pos,
+        parsing_state=...,
     ):  # -> tuple[ParsedVerbatimArgs, Any, Any] | None:
         ...
     def __repr__(self):  # -> str:

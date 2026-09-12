@@ -4,5 +4,8 @@ logger = ...
 
 class PartialLatexToLatexEncoder(UnicodeToLatexEncoder):
     def __init__(
-        self, keep_latex_chars=..., conversion_rules=..., **kwargs
+        self,
+        keep_latex_chars=...,
+        conversion_rules=...,
+        **kwargs,
     ) -> None: ...
