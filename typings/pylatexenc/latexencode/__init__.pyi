@@ -14,5 +14,9 @@ def unicode_to_latex(
 utf82latex = ...
 
 def utf8tolatex(
-    s, non_ascii_only=..., brackets=..., substitute_bad_chars=..., fail_bad_chars=...
+    s,
+    non_ascii_only=...,
+    brackets=...,
+    substitute_bad_chars=...,
+    fail_bad_chars=...,
 ): ...

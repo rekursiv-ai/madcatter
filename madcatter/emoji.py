@@ -7038,7 +7038,7 @@ _COMMON: Mapping[str, str] = MappingProxyType(
         "zombie_man": "🧟♂",
         "zombie_woman": "🧟♀",
         "zzz": "💤",
-    }
+    },
 )
 
 # https://cdn.jsdelivr.net/npm/emojibase-data@latest/en/shortcodes/cldr.json
@@ -7067,7 +7067,7 @@ _CLDR: Mapping[str, str] = MappingProxyType(
         "train": "🚆",
         "umbrella": "☂",
         "whale": "🐋",
-    }
+    },
 )
 
 # https://cdn.jsdelivr.net/npm/emojibase-data@latest/en/shortcodes/emojibase.json
@@ -7106,7 +7106,7 @@ _EMOJIBASE: Mapping[str, str] = MappingProxyType(
         "umbrella": "☂",
         "up": "🔼",
         "whale": "🐋",
-    }
+    },
 )
 
 # https://api.github.com/emojis
@@ -7147,7 +7147,7 @@ _GITHUB: Mapping[str, str] = MappingProxyType(
         "umbrella": "☔",
         "up": "🆙",
         "whale": "🐳",
-    }
+    },
 )
 
 # https://raw.githubusercontent.com/iamcal/emoji-data/master/emoji.json
@@ -7186,11 +7186,11 @@ _SLACK: Mapping[str, str] = MappingProxyType(
         "umbrella": "☂️",
         "up": "🆙",
         "whale": "🐳",
-    }
+    },
 )
 
 EMOJI: Mapping[str, str] = MappingProxyType(
-    {**_COMMON, **_CLDR, **_EMOJIBASE, **_GITHUB, **_SLACK}
+    {**_COMMON, **_CLDR, **_EMOJIBASE, **_GITHUB, **_SLACK},
 )
 
 
