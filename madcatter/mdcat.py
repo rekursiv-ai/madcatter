@@ -103,7 +103,15 @@ def to_ascii(text: str) -> str:
 
 
 def strip_trailing_whitespace(text: str) -> str:
-    """Strip trailing whitespace from each line."""
+    """Strip trailing whitespace from each line.
+
+    Args:
+      text: Text.
+
+    Returns:
+      result: The str.
+
+    """
     return "\n".join(line.rstrip() for line in text.split("\n"))
 
 
@@ -328,7 +336,13 @@ def render_code_blocks(
     code_blocks: list[tuple[str | None, str]],
     console: Console,
 ) -> None:
-    """Render code blocks."""
+    """Render code blocks.
+
+    Args:
+      code_blocks: Code blocks.
+      console: Console.
+
+    """
     for i, (lang, code) in enumerate(code_blocks):
         if i > 0:
             console.print()
