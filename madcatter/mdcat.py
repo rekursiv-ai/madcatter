@@ -137,9 +137,6 @@ class Markdown(MarkdownBase):
     }
 
 
-_EMOJI_RE = re.compile(r":([a-z0-9_+\-]+):")
-
-
 def process_emoji(text: str) -> str:
     """Replace :shortcode: with Unicode emoji, skipping code blocks.
 
@@ -165,7 +162,7 @@ def process_emoji(text: str) -> str:
         elif in_fence or line.startswith("    "):
             result.append(line)
         else:
-            result.append(_EMOJI_RE.sub(_replace, line))
+            result.append(re.sub(r":([a-z0-9_+\-]+):", _replace, line))
     return "\n".join(result)
 
 
@@ -756,7 +753,7 @@ def _main() -> int:
 
     # Output ASCII-converted text.
     if ascii_buffer is not None:
-        print(to_ascii(ascii_buffer.getvalue()), end="")  # noqa: T201
+        print(to_ascii(ascii_buffer.getvalue()), end="")  # noqa: T201 -- ASCII mode is the command's final console output.
     return 0
 
 
