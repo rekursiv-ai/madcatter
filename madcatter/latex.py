@@ -253,7 +253,7 @@ def latex2unicode(latex: str) -> str:
     try:
         # Use AST-based conversion for proper subscript/superscript handling.
         return _latex_to_unicode_ast(latex)
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 -- Latex compilation failures are reported as unavailable renderings.
         # If conversion fails, return original LaTeX.
         return latex
 

@@ -8,9 +8,6 @@ import secrets
 from madcatter.latex import latex2unicode
 
 
-_FENCE_RE = re.compile(r"^(`{3,}|~{3,})(.*)$")
-
-
 def is_fence_delimiter(line: str) -> bool:
     """Report whether a line opens or closes a fenced code block.
 
@@ -25,7 +22,7 @@ def is_fence_delimiter(line: str) -> bool:
       is_delimiter: True when the line is a real fence open/close marker.
 
     """
-    match = _FENCE_RE.match(line.strip())
+    match = re.match(r"^(`{3,}|~{3,})(.*)$", line.strip())
     if match is None:
         return False
     return "`" not in match.group(2)
