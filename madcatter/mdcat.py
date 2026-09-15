@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import ClassVar, Final, NoReturn, override
+from typing import ClassVar, Final, NoReturn, Protocol, cast, override
 from urllib.parse import urlparse
 
 import argparse
@@ -43,6 +43,35 @@ from madcatter.markdown import (
     process_math_blocks,
     strip_frontmatter,
 )
+
+
+class _Flags(Protocol):
+    path: list[str]
+    force_color: bool | None
+    ascii: bool
+    code_theme: str
+    inline_code_lexer: str | None
+    hyperlinks: bool
+    width: int | None
+    pad: int | None
+    justify: bool
+    page: bool
+    separator: bool
+    toc: bool
+    links: bool
+    check_links: bool
+    code_only: bool
+    code_lang: str | None
+    style: str | None
+    export_html: str | None
+    export_ansi: str | None
+    watch: bool
+    follow: bool
+    follow_lines: int
+    no_frontmatter: bool
+    section: str | None
+    diff: str | None
+    math: bool
 
 
 # Unicode to ASCII translation for printable output.
@@ -418,7 +447,7 @@ def render_diff(file1: str, file2: str, console: Console) -> None:
 def follow_file(
     path: str,
     console: Console,
-    args: argparse.Namespace,
+    flags: _Flags,
     poll: float = 0.3,
     anchor_window: int = 32,
 ) -> None:
@@ -432,7 +461,7 @@ def follow_file(
     Args:
       path: File path to monitor; "-" not supported.
       console: Rich Console to write appended lines to.
-      args: Argparse Namespace with rendering flags (no_frontmatter, follow_lines, etc).
+      flags: Parsed rendering flags (no_frontmatter, follow_lines, etc).
       poll: Sleep interval in seconds between file reads.
       anchor_window: Max recent lines to track as checksums; buffers 32 hashes by default.
 
@@ -455,24 +484,24 @@ def follow_file(
             last_data = data
 
             lines = data.decode("utf-8", "replace").splitlines()
-            if args.no_frontmatter:
+            if flags.no_frontmatter:
                 lines = strip_frontmatter(lines)
 
             if first:
-                tail = lines[-args.follow_lines :] if args.follow_lines else lines
+                tail = lines[-flags.follow_lines :] if flags.follow_lines else lines
                 first = False
             else:
                 idx = _find_anchor_index(lines, anchors)
                 if idx is None:
                     console.print(Rule("reopened", style="dim"))
-                    tail = lines[-args.follow_lines :] if args.follow_lines else lines
+                    tail = lines[-flags.follow_lines :] if flags.follow_lines else lines
                 else:
                     tail = lines[idx + 1 :]
 
             for line in tail:
                 if not line.strip():
                     continue
-                _render_line(console, args, line)
+                _render_line(console, flags, line)
                 anchors.append(_line_hash(line))
 
             time.sleep(poll)
@@ -482,17 +511,17 @@ def follow_file(
 
 def watch_file(
     path: str,
-    render_func: Callable[[str, Console, argparse.Namespace], str],
+    render_func: Callable[[str, Console, _Flags], str],
     console: Console,
-    args: argparse.Namespace,
+    flags: _Flags,
 ) -> None:
     """Watch file for changes and re-render.
 
     Args:
       path: File path to monitor; must exist.
-      render_func: Callable(path, console, args) -> str that renders the file.
+      render_func: Callable(path, console, flags) -> str that renders the file.
       console: Rich Console to clear and rewrite on each change.
-      args: Argparse Namespace with rendering flags.
+      flags: Parsed rendering flags.
 
     """
     last_mtime = 0.0
@@ -509,7 +538,7 @@ def watch_file(
                 console.print(
                     f"[dim]Updated at {time.strftime('%H:%M:%S')}[/dim]\n",
                 )
-                render_func(path, console, args)
+                render_func(path, console, flags)
 
             time.sleep(1)
     except KeyboardInterrupt:
@@ -525,7 +554,7 @@ def export_html(markdown_body: str, output_path: str) -> None:
 
     """
     md = MarkdownIt()
-    html = md.render(markdown_body)
+    html = cast(str, md.render(markdown_body))
 
     html_template = f"""<!DOCTYPE html>
 <html>
@@ -549,13 +578,13 @@ def export_html(markdown_body: str, output_path: str) -> None:
         f.write(html_template)
 
 
-def render_markdown_file(path: str, console: Console, args: argparse.Namespace) -> str:
+def render_markdown_file(path: str, console: Console, flags: _Flags) -> str:
     """Read and render a markdown file, returning the body.
 
     Args:
       path: File path or "-" for stdin.
       console: Rich Console to write rendered output to.
-      args: Argparse Namespace with display mode flags (toc, links, section, etc).
+      flags: Parsed display mode flags (toc, links, section, etc).
 
     Returns:
       markdown_body: Processed markdown string before rendering.
@@ -568,27 +597,27 @@ def render_markdown_file(path: str, console: Console, args: argparse.Namespace) 
             markdown_body = markdown_file.read()
 
     # Strip YAML frontmatter if requested.
-    if args.no_frontmatter:
+    if flags.no_frontmatter:
         markdown_body = "\n".join(strip_frontmatter(markdown_body.splitlines()))
 
     # Process emoji shortcodes and math blocks.
     markdown_body = process_emoji(markdown_body)
-    markdown_body = process_math_blocks(markdown_body, enable_math=args.math)
+    markdown_body = process_math_blocks(markdown_body, enable_math=flags.math)
 
     # Apply section filter if specified.
-    if args.section:
-        markdown_body = filter_section(markdown_body, args.section)
+    if flags.section:
+        markdown_body = filter_section(markdown_body, flags.section)
         if not markdown_body:
-            console.print(f"[red]Section '{args.section}' not found[/red]")
+            console.print(f"[red]Section '{flags.section}' not found[/red]")
             return ""
 
     # Handle various display modes.
-    if args.toc:
+    if flags.toc:
         headings = extract_headings(markdown_body)
         render_toc(headings, console)
         return markdown_body
 
-    if args.links:
+    if flags.links:
         links = extract_links(markdown_body)
         console.print(
             Panel(
@@ -598,13 +627,13 @@ def render_markdown_file(path: str, console: Console, args: argparse.Namespace) 
         )
         return markdown_body
 
-    if args.check_links:
+    if flags.check_links:
         links = extract_links(markdown_body)
         check_links(links, console)
         return markdown_body
 
-    if args.code_only:
-        code_blocks = extract_code_blocks(markdown_body, args.code_lang)
+    if flags.code_only:
+        code_blocks = extract_code_blocks(markdown_body, flags.code_lang)
         if code_blocks:
             render_code_blocks(code_blocks, console)
         else:
@@ -614,24 +643,24 @@ def render_markdown_file(path: str, console: Console, args: argparse.Namespace) 
     # Regular markdown rendering.
     markdown = Markdown(
         markdown_body,
-        justify="full" if args.justify else "left",
-        code_theme=args.code_theme,
-        hyperlinks=args.hyperlinks,
-        inline_code_lexer=args.inline_code_lexer,
+        justify="full" if flags.justify else "left",
+        code_theme=flags.code_theme,
+        hyperlinks=flags.hyperlinks,
+        inline_code_lexer=flags.inline_code_lexer,
     )
 
-    if args.page:
+    if flags.page:
         fileio = io.StringIO()
         page_console = Console(
             file=fileio,
-            force_terminal=False if args.ascii else args.force_color,
-            width=args.width,
+            force_terminal=False if flags.ascii else flags.force_color,
+            width=flags.width,
         )
         page_console.print(markdown)
         output = fileio.getvalue()
-        if args.ascii:
+        if flags.ascii:
             output = to_ascii(output)
-        if not args.pad:
+        if not flags.pad:
             output = strip_trailing_whitespace(output)
         pydoc.pager(output)
     else:
@@ -639,12 +668,12 @@ def render_markdown_file(path: str, console: Console, args: argparse.Namespace) 
         fileio = io.StringIO()
         capture_console = Console(
             file=fileio,
-            force_terminal=console.is_terminal or args.force_color,
-            width=args.pad or args.width,
+            force_terminal=console.is_terminal or flags.force_color,
+            width=flags.pad or flags.width,
         )
         capture_console.print(markdown)
         output = fileio.getvalue()
-        if not args.pad:
+        if not flags.pad:
             output = strip_trailing_whitespace(output)
         console.file.write(output)
 
@@ -664,92 +693,94 @@ def _main() -> int:
         description=(__doc__ or "").strip(),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    args, remaining = _parse_args(parser)
+    flags, remaining = _parse_args(parser)
     if remaining:
         parser.error(f"unrecognized arguments: {' '.join(remaining)}")
 
     # --code-lang implies --code-only.
-    if args.code_lang:
-        if args.toc or args.links or args.check_links:
+    if flags.code_lang:
+        if flags.toc or flags.links or flags.check_links:
             parser.error(
                 "--code-lang cannot be used with --toc, --links, or --check-links",
             )
-        args.code_only = True
+        flags.code_only = True
 
     # Validate incompatible flags.
-    if args.page and args.watch:
+    if flags.page and flags.watch:
         parser.error("--page and --watch cannot be used together")
-    if args.follow and args.watch:
+    if flags.follow and flags.watch:
         parser.error("--follow and --watch are mutually exclusive")
-    if args.follow and args.page:
+    if flags.follow and flags.page:
         parser.error("--page and --follow cannot be used together")
-    if args.follow and (args.toc or args.links or args.check_links or args.code_only):
+    if flags.follow and (
+        flags.toc or flags.links or flags.check_links or flags.code_only
+    ):
         parser.error(
             "--follow cannot be combined with --toc/--links/--check-links/--code-only",
         )
 
     # Apply style profile.
-    if args.style:
-        profile = STYLE_PROFILES[args.style]
-        args.code_theme = profile["code_theme"]
+    if flags.style:
+        profile = STYLE_PROFILES[flags.style]
+        flags.code_theme = profile["code_theme"]
 
     # Create console - capture to StringIO for --ascii mode.
-    ascii_buffer = io.StringIO() if args.ascii else None
+    ascii_buffer = io.StringIO() if flags.ascii else None
     console = Console(
         file=ascii_buffer,
-        force_terminal=False if args.ascii else args.force_color,
-        width=args.width,
+        force_terminal=False if flags.ascii else flags.force_color,
+        width=flags.width,
         record=True,
     )
 
     # Handle diff mode.
-    if args.diff:
-        if not args.path or len(args.path) != 1:
+    if flags.diff:
+        if not flags.path or len(flags.path) != 1:
             console.print("[red]Error: --diff requires exactly one file argument[/red]")
             sys.exit(1)
-        render_diff(args.path[0], args.diff, console)
+        render_diff(flags.path[0], flags.diff, console)
         return 0
 
     # Ensure we have at least one file.
-    if not args.path:
-        args.path = ["-"]
+    if not flags.path:
+        flags.path = ["-"]
 
     # Handle watch mode.
-    if args.watch:
-        if len(args.path) != 1 or args.path[0] == "-":
+    if flags.watch:
+        if len(flags.path) != 1 or flags.path[0] == "-":
             console.print("[red]Error: --watch requires exactly one file path[/red]")
             sys.exit(1)
-        watch_file(args.path[0], render_markdown_file, console, args)
+        watch_file(flags.path[0], render_markdown_file, console, flags)
         return 0
 
     # Handle follow mode.
-    if args.follow:
-        if len(args.path) != 1 or args.path[0] == "-":
+    if flags.follow:
+        if len(flags.path) != 1 or flags.path[0] == "-":
             console.print("[red]Error: --follow requires exactly one file path[/red]")
             sys.exit(1)
-        follow_file(args.path[0], console, args)
+        follow_file(flags.path[0], console, flags)
         return 0
 
     # Process files.
     markdown_bodies: list[str] = []
-    for i, path in enumerate(args.path):
-        if i > 0 and args.separator:
+    for i, path in enumerate(flags.path):
+        if i > 0 and flags.separator:
             console.print(Rule(style="dim"))
 
-        markdown_body = render_markdown_file(path, console, args)
+        markdown_body = render_markdown_file(path, console, flags)
         markdown_bodies.append(markdown_body)
 
     # Handle exports.
     combined_body = "\n\n".join(markdown_bodies)
 
-    if args.export_html:
-        export_html(combined_body, args.export_html)
-        console.print(f"[green]Exported HTML to {args.export_html}[/green]")
+    if flags.export_html:
+        export_html(combined_body, flags.export_html)
+        console.print(f"[green]Exported HTML to {flags.export_html}[/green]")
 
-    if args.export_ansi:
-        with Path(args.export_ansi).open("w", encoding="utf-8") as f:
+    if flags.export_ansi:
+        with Path(flags.export_ansi).open("w", encoding="utf-8") as f:
             f.write(console.export_text())
-        console.print(f"[green]Exported ANSI to {args.export_ansi}[/green]")
+        console.print(f"[green]Exported ANSI to {flags.export_ansi}[/green]")
 
     # Output ASCII-converted text.
     if ascii_buffer is not None:
@@ -775,17 +806,17 @@ def _find_anchor_index(
     return None
 
 
-def _render_line(console: Console, args: argparse.Namespace, line: str) -> None:
+def _render_line(console: Console, flags: _Flags, line: str) -> None:
     """Print one markdown line with the CLI's rendering options."""
     body = process_emoji(line)
-    body = process_math_blocks(body, enable_math=args.math)
+    body = process_math_blocks(body, enable_math=flags.math)
     console.print(
         Markdown(
             body,
-            justify="full" if args.justify else "left",
-            code_theme=args.code_theme,
-            hyperlinks=args.hyperlinks,
-            inline_code_lexer=args.inline_code_lexer,
+            justify="full" if flags.justify else "left",
+            code_theme=flags.code_theme,
+            hyperlinks=flags.hyperlinks,
+            inline_code_lexer=flags.inline_code_lexer,
         ),
     )
 
@@ -819,7 +850,7 @@ def _exit_on_broken_pipe() -> NoReturn:
 def _parse_args(
     parser: argparse.ArgumentParser,
     argv: list[str] | None = None,
-) -> tuple[argparse.Namespace, list[str]]:
+) -> tuple[_Flags, list[str]]:
     """Add mdcat flags to ``parser`` and parse."""
     parser.add_argument(
         "path",
@@ -998,4 +1029,5 @@ def _parse_args(
         default=True,
         help="disable math rendering (default: enabled)",
     )
-    return parser.parse_known_args(argv)
+    parsed, remaining = parser.parse_known_args(argv)
+    return cast(_Flags, parsed), remaining

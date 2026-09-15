@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from unittest.mock import Mock
+
+from pylatexenc.latexwalker import LatexGroupNode, LatexMacroNode
+from pylatexenc.macrospec._argparsers import ParsedMacroArgs
 
 from madcatter.latex import (
     _try_convert_fraction,
@@ -106,8 +109,7 @@ def test_latex2unicode_fallback_on_error():
     """Test that invalid LaTeX returns original string."""
     invalid = r"\invalidcommand{xyz"
     result = latex2unicode(invalid)
-    # Should either convert or return original.
-    assert isinstance(result, str)
+    assert result == "xyz"
 
 
 def test_latex2unicode_exception_handling():
@@ -115,26 +117,25 @@ def test_latex2unicode_exception_handling():
     # Create a string that might trigger parsing errors.
     problematic = r"\begin{matrix} \end{matrix}"
     result = latex2unicode(problematic)
-    assert isinstance(result, str)
+    assert result == ""
 
     # Test with malformed brackets.
     malformed = r"{{{unclosed"
     result = latex2unicode(malformed)
-    assert isinstance(result, str)
+    assert result == "unclosed"
 
 
 def test_latex2unicode_unknown_node_type():
     """Test handling of unknown node types (line 304)."""
     # Most latex expressions should work even with complex structures.
     result = latex2unicode(r"\text{hello} x^2")
-    assert isinstance(result, str)
+    assert result == "hello x²"
 
 
 def test_latex2unicode_no_next_node():
     """Test handling when there's no next node for scripts (line 350)."""
     # Edge case: script at end without following content.
     result = latex2unicode(r"x^")
-    assert isinstance(result, str)
     assert "x" in result
 
 
@@ -142,7 +143,7 @@ def test_latex2unicode_no_macro_after_script():
     """Test when script is not followed by group/macro (line 381)."""
     # Test script followed by whitespace or other content.
     result = latex2unicode(r"x^ 2")
-    assert isinstance(result, str)
+    assert result == "x^ 2"
 
 
 def test_latex2unicode_custom_symbols():
@@ -168,7 +169,7 @@ def test_latex2unicode_fraction_without_args():
     """Test fraction without proper arguments (lines 429, 434)."""
     # This tests the early returns in _try_convert_fraction.
     result = latex2unicode(r"\frac{}")
-    assert isinstance(result, str)
+    assert result == "%s/%s"
 
 
 def test_latex2unicode_no_macro_for_script():
@@ -183,7 +184,6 @@ def test_latex2unicode_reconstruct_macro_with_args():
     """Test macro reconstruction with arguments (lines 496-499)."""
     # Test macros with arguments are properly handled.
     result = latex2unicode(r"\sqrt{x}")
-    assert isinstance(result, str)
     assert "x" in result or "√" in result
 
 
@@ -191,7 +191,6 @@ def test_latex2unicode_reconstruct_nodes():
     """Test node reconstruction (lines 514-524)."""
     # Test complex nested structures.
     result = latex2unicode(r"\sum_{i=1}^{n} \frac{1}{i}")
-    assert isinstance(result, str)
     assert "∑" in result
 
 
@@ -199,7 +198,6 @@ def test_latex2unicode_unsupported_script_chars():
     """Test unsupported characters in scripts (lines 592-593)."""
     # Test characters that don't have superscript/subscript equivalents.
     result = latex2unicode(r"x^{ABC}")
-    assert isinstance(result, str)
     # Should contain some form of the superscript.
     assert "x" in result
 
@@ -260,7 +258,6 @@ def test_latex2unicode_frac_missing_denom():
     """Test fraction with missing denominator (line 434)."""
     # Test \frac with only one argument.
     result = latex2unicode(r"\frac{1}")
-    assert isinstance(result, str)
     # Should fallback to text conversion.
     assert "1" in result
 
@@ -285,14 +282,14 @@ def test_latex2unicode_reconstruct_with_group():
     """Test node reconstruction with groups (lines 521-523)."""
     # Test reconstruction of LatexGroupNode.
     result = latex2unicode(r"\sqrt{{x}}")
-    assert isinstance(result, str)
+    assert result == "√(x)"
 
 
 def test_latex2unicode_reconstruct_with_macro():
     """Test node reconstruction with macros (lines 519-520)."""
     # Test reconstruction of LatexMacroNode within arguments.
     result = latex2unicode(r"\sqrt{\alpha}")
-    assert isinstance(result, str)
+    assert result == "√(α)"
 
 
 def test_latex2unicode_unsupported_subscript():
@@ -336,7 +333,7 @@ def test_latex2unicode_frac_none_args():
     # Create a case where numer_node or denom_node could be None
     # This might happen with malformed \frac.
     result = latex2unicode(r"\frac{}{1}")
-    assert isinstance(result, str)
+    assert result == "/1"
 
 
 def test_latex2unicode_macro_not_followed_by_chars():
@@ -375,17 +372,17 @@ def test_latex2unicode_frac_with_none_in_argnlist():
     # This is a defensive check that's hard to trigger naturally
     # We can test it by directly calling the internal function with a mock node
     # Create a mock node where argnlist contains None.
-    mock_node = Mock()
-    mock_node.nodeargd = Mock()
-    mock_node.nodeargd.argnlist = [None, Mock()]
+    mock_node = cast(LatexMacroNode, Mock())
+    mock_node.nodeargd = ParsedMacroArgs(
+        argnlist=[None, cast(LatexGroupNode, Mock())],
+    )
 
     result = _try_convert_fraction(mock_node)
     assert result == ""
 
     # Also test with both None.
-    mock_node2 = Mock()
-    mock_node2.nodeargd = Mock()
-    mock_node2.nodeargd.argnlist = [None, None]
+    mock_node2 = cast(LatexMacroNode, Mock())
+    mock_node2.nodeargd = ParsedMacroArgs(argnlist=[None, None])
 
     result2 = _try_convert_fraction(mock_node2)
     assert result2 == ""
