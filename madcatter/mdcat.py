@@ -5,9 +5,8 @@ Custom markdown renderer that left-justifies headings instead of centering.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
-from typing import ClassVar, Final, NoReturn, Protocol, cast, override
+from typing import TYPE_CHECKING, ClassVar, Final, NoReturn, Protocol, cast, override
 from urllib.parse import urlparse
 
 import argparse
@@ -43,6 +42,10 @@ from madcatter.markdown import (
     process_math_blocks,
     strip_frontmatter,
 )
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class _Flags(Protocol):

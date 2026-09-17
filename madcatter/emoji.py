@@ -11,8 +11,12 @@ Merge order: _COMMON | _CLDR | _EMOJIBASE | _GITHUB | _SLACK (Slack wins conflic
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from types import MappingProxyType
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 # All sources agree on these (normalized for VS16/ZWJ).
