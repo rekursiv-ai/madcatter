@@ -266,9 +266,7 @@ def _latex_to_unicode_ast(latex: str) -> str:
     nodes, _, _ = walker.get_latex_nodes()
 
     # Convert AST to Unicode.
-    result = _nodes_to_unicode(nodes)
-
-    return result
+    return _nodes_to_unicode(nodes)
 
 
 def _process_chars_with_scripts(chars: str) -> str:
@@ -513,10 +511,8 @@ def _convert_scripts(text: str) -> str:
         _convert_superscript_match,
         text,
     )
-    text = re.sub(
+    return re.sub(
         r"_(?:\{([^}]+)\}|([a-zA-Z0-9α-ωΑ-Ω+\-=∈∉⊂⊃⊆⊇∪∩∞ϵ*]+))",
         _convert_subscript_match,
         text,
     )
-
-    return text
