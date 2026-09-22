@@ -339,6 +339,10 @@ def _try_handle_script_after_chars(
     is_super = chars.endswith("^")
     next_node = nodes[i + 1]
     base = chars[:-1]
+    # The base may carry its own embedded scripts (e.g. "_t q(x_t|e_t) p(e"
+    # from "\prod_t ... p(e_{t+1}"); convert them rather than emit raw.
+    if "^" in base or "_" in base:
+        base = _process_chars_with_scripts(base)
     scripts = _SUPERSCRIPTS if is_super else _SUBSCRIPTS
     open_p = "⁽" if is_super else "₍"
     close_p = "⁾" if is_super else "₎"

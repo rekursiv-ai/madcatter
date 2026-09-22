@@ -58,6 +58,20 @@ def test_latex2unicode_combined():
     assert latex2unicode(r"a_i^j") == "aᵢʲ"
 
 
+def test_latex2unicode_scripts_before_trailing_group():
+    r"""Embedded scripts convert even when a trailing braced group follows.
+
+    Regresses a bug where a chars run ending in ``_`` (attaching to the next
+    ``{...}`` group) had its base appended raw, dropping every embedded
+    subscript before it -- e.g. the factor between ``\prod_t`` and a
+    following ``p(e_{t+1}...)`` rendered ``x_t`` literally.
+    """
+    assert (
+        latex2unicode(r"$\prod_t q(x_t|e_t) p(e_{t+1}|e_t,x_t)$")
+        == "∏ₜ q(xₜ|eₜ) p(eₜ₊₁|eₜ,xₜ)"
+    )
+
+
 def test_latex2unicode_greek_in_scripts():
     """Test Greek letters in scripts are converted to superscript/subscript."""
     result = latex2unicode(r"x^\alpha")
