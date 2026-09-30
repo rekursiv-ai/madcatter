@@ -1,3 +1,6 @@
+# NEVER EDIT THIS FILE!
+# uv sync --all-groups --all-extras --frozen
+
 [project]
 name = "madcatter"
 version = "0.1.3"
@@ -32,8 +35,6 @@ dependencies = [
 
 [dependency-groups]
 # NEVER ADD MORE DEPENDENCIES!
-
-# uv sync --all-groups --all-extras --frozen
 
 debug = [
     "ipython",
@@ -236,6 +237,23 @@ extend-include = ["*.ipynb"]
 # NEVER ADD MORE SUPPRESSIONS! SUPPRESS IN FILE!
 
 select = ["ALL"]
+
+extend-safe-fixes = [
+    "C4",     # Collection and comprehension rewrites.
+    "E711",   # Compare to None with identity.
+    "E712",   # Compare booleans by truthiness.
+    "F401",   # Remove unused imports.
+    "F601",   # Remove overwritten dictionary entries.
+    "F841",   # Remove unused local bindings.
+    "PT006",  # Use tuple for pytest.mark.parametrize names.
+    "PT007",  # Use tuple/list consistently for pytest values.
+    "PYI034", # Annotate __enter__/__new__/__iadd__ returns as Self.
+    "RET504", # Remove unnecessary local assignment directly before return.
+    "SIM102", # Collapse nested if statements.
+    "SIM105", # Use contextlib.suppress instead of try-except-pass.
+    "TC",     # Type-checking import and annotation rewrites.
+    "UP",     # Python syntax upgrades.
+]
 
 ignore = [
     # COM812 is deliberately ignored here and re-enabled only by the
@@ -444,7 +462,7 @@ runtime-evaluated-decorators = [
 "math.sqrt".msg = "Operators over functions: write `x**0.5` (STYLE.md Code Style)."
 "math.pow".msg = "Operators over functions: write `x**y` (STYLE.md Code Style)."
 "os.environ.setdefault".msg = "Assign, never setdefault: a deferred default writes a different tree per caller (AGENTS.md Provisioned Paths)."
-"pathlib.Path.home".msg = "Per-user paths go through madcatter.lib.userdirs (XDG base directories)."
+"pathlib.Path.home".msg = "Per-user paths require shared userdirs helpers (XDG base directories)."
 
 [tool.ruff.lint.isort]
 case-sensitive = false
@@ -475,7 +493,14 @@ section-order = [
 typeCheckingMode = "recommended"
 failOnWarnings = true  # Warnings fail the check (basedpyright default; pinned explicitly).
 useLibraryCodeForTypes = false
+# `stubPath` (not `extraPaths`) is the one root that resolves ahead of an
+# installed package's inline types.
 stubPath = "typings"
+# `rekursiv-ai-typeshed` (a `typecheck` dependency): the checkers' bundled stdlib
+# with `int`/`float` `__pow__` returning `float` rather than typeshed's `Any`,
+# which would otherwise make every `x ** 0.5` a `reportAny` violation.
+# `uv sync` installs it as shared data at this path; the `basedpyright/` tree
+# also carries configgle's `Intersection` polyfill.
 typeshedPath = ".venv/share/rekursiv-ai-typeshed/basedpyright"
 # `exclude` and `ignore` are the SAME list on purpose. `exclude` stops a path
 # from being a checked source; `ignore` also silences diagnostics when an
@@ -508,7 +533,7 @@ ignore = [
     # NEVER ADD MORE IGNORES! SUPPRESS IN FILE!
 ]
 pythonPlatform = "Linux"
-pythonVersion = "3.12"
+pythonVersion = "3.12"  # Intentional; test at 3.12 for exports.
 
 reportCallInDefaultInitializer = false     # Immutable constructors (e.g. NamedTuple) in defaults are safe.
 reportImplicitStringConcatenation = false  # Conflicts with ruff ISC003.
@@ -521,7 +546,8 @@ reportInvalidCast = false                  # All cast() calls are intentional.
 # NEVER ADD MORE SUPPRESSIONS! SUPPRESS IN FILE!
 
 [tool.ty.environment]
-python-version = "3.12"
+python-version = "3.12"  # Intentional; test at 3.12 for exports.
+# Same patch as `[tool.basedpyright] typeshedPath`, with ty's real `ty_extensions`.
 typeshed = ".venv/share/rekursiv-ai-typeshed/ty"
 extra-paths = ["typings"]
 
@@ -561,6 +587,10 @@ ignore-words = ".codespell-ignore"
 # Don't add new folder paths here -- add them to .pre-commit-config.yaml's
 # codespell exclude regex instead. This list is only for file patterns.
 skip = "htmlcov,.doctrees,*.pyc,*.ico,*.png,*.jpg,*.PNG,*.inv,*.dot,*.css,*.egg-info,uv.lock,__pycache__,.git,.venv,typings,**/third_party/"
+# URLs, inline code spans, mixed-case identifiers, and fenced code blocks are
+# names, not prose; skipping them stops `-w` rewriting ``SimPy`` -> ``simply``.
+ignore-regex = '(?:https?://[^\s)>\]]+|`[^`\n]+`|\b\w*[a-z][A-Z]\w*\b)'
+ignore-multiline-regex = '(?m)^[ \t]*```.*?^[ \t]*```'
 
 [tool.uv]
 package = true
