@@ -112,7 +112,6 @@ markers = [
     "cuda: tests that require a real CUDA device (skipped in hosted CI)",
     "integration: tests that require networking or external deps (deselected by default)",
     "performance: timing-sensitive tests (deselected by default)",
-    "real_llm: integration tests that spawn a live LLM CLI (claude/codex); skipped unless RUN_REAL_LLM=1 is set",
     "slow: expensive local correctness test (JIT, training, full fixtures, git, bash, or a fresh interpreter); excluded from the fast unit tier and run by the pre-push slow gate",
     # Actual annotations.
     "bench_compile_time: asserts a compile-time budget or comparison",
@@ -123,8 +122,7 @@ markers = [
     "browser_chrome: drives a local Chrome/Chromium browser",
     "browser_zendriver: drives the zendriver browser backend",
     "cli_bash: shells out to bash",
-    "cli_claude: shells out to the Claude CLI; skipped unless RUN_REAL_LLM=1",
-    "cli_codex: shells out to the Codex CLI; skipped unless RUN_REAL_LLM=1",
+    "cli_real_llm: spawns a live LLM CLI (claude, codex); skipped unless RUN_REAL_LLM=1",
     "cli_docker: shells out to Docker",
     "cli_git: shells out to git or requires a real git repository",
     "cli_node: shells out to node/npm tooling",
@@ -188,6 +186,21 @@ norecursedirs = [
     "__pycache__",
     "third_party",
     "typings",
+    # Copied tests require mutmut trampolines and must not join normal collection.
+    "mutants",
+]
+
+[tool.mutmut]
+# Uncovered lines cannot produce assertion failures; measure them with coverage.
+mutate_only_covered_lines = true
+source_paths = ["."]
+pytest_add_cli_args = ["-p", "no:jaxtyping"]
+# Argparse help presentation has no behavior, so a mutant there is unkillable by
+# a correct test. Mutmut skips whole lines: match only lines holding nothing but
+# that keyword, so a sibling such as `nargs="*"` on a shared line still mutates.
+do_not_mutate_patterns = [
+    '^\s*help=("[^"]*"\s*)+,?\s*$',
+    '^\s*(description|formatter_class)=[\w.]+,?\s*$',
 ]
 
 [tool.coverage.run]
@@ -496,6 +509,12 @@ useLibraryCodeForTypes = false
 # `stubPath` (not `extraPaths`) is the one root that resolves ahead of an
 # installed package's inline types.
 stubPath = "typings"
+# typings/ is ALSO a source root so a stub package can ship a placeholder .py:
+# triton is linux-only (uv.lock `sys_platform == 'linux'`), so without this
+# every `import triton` fails `reportMissingModuleSource` on macOS, and an inline
+# suppression would fail `reportUnnecessaryTypeIgnoreComment` on linux. Stubs
+# still win over source, so no type changes. Mirrors [tool.ty.environment].
+extraPaths = ["typings"]
 # `rekursiv-ai-typeshed` (a `typecheck` dependency): the checkers' bundled stdlib
 # with `int`/`float` `__pow__` returning `float` rather than typeshed's `Any`,
 # which would otherwise make every `x ** 0.5` a `reportAny` violation.
