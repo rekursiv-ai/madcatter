@@ -38,6 +38,7 @@ import requests
 
 from madcatter.emoji import resolve
 from madcatter.markdown import (
+    inside_fence,
     is_fence_delimiter,
     process_math_blocks,
     strip_frontmatter,
@@ -185,12 +186,7 @@ def process_emoji(text: str) -> str:
 
     lines = text.split("\n")
     result: list[str] = []
-    for index, line in enumerate(lines):
-        in_fence = (
-            sum(is_fence_delimiter(previous_line) for previous_line in lines[:index])
-            % 2
-            == 1
-        )
+    for line, in_fence in zip(lines, inside_fence(lines), strict=True):
         if is_fence_delimiter(line) or in_fence or line.startswith("    "):
             result.append(line)
         else:
@@ -232,16 +228,10 @@ def extract_headings(markdown_body: str) -> list[tuple[int, str]]:
     headings: list[tuple[int, str]] = []
     lines = markdown_body.split("\n")
 
-    for index, line in enumerate(lines):
+    for line, in_code_block in zip(lines, inside_fence(lines), strict=True):
         # Track code block boundaries.
         if is_fence_delimiter(line):
             continue
-
-        in_code_block = (
-            sum(is_fence_delimiter(previous_line) for previous_line in lines[:index])
-            % 2
-            == 1
-        )
 
         # Skip lines inside code blocks.
         if in_code_block:

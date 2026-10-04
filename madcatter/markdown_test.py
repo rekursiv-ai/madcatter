@@ -8,6 +8,7 @@ import secrets
 
 from madcatter import markdown
 from madcatter.markdown import (
+    inside_fence,
     is_fence_delimiter,
     process_math_blocks,
     strip_frontmatter,
@@ -135,6 +136,12 @@ def test_is_fence_delimiter_rejects_backticks_in_info():
 
 def test_is_fence_delimiter_accepts_tilde_info():
     assert is_fence_delimiter("  ~~~language  ") is True
+
+
+def test_inside_fence_reports_the_state_each_line_starts_in():
+    lines = ["a", "```", "b", "```x```", "~~~", "c", "```"]
+    assert inside_fence(lines) == [False, False, True, True, True, False, False]
+    assert inside_fence([]) == []
 
 
 def test_process_math_blocks_default_enables_conversion():

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from io import StringIO, TextIOBase
 from pathlib import Path
-from typing import override
+from typing import TYPE_CHECKING, override
 
 import argparse
 import collections
@@ -19,8 +19,12 @@ from rich.rule import Rule
 import pytest
 import requests
 
-from madcatter import mdcat
+from madcatter import markdown, mdcat
 from madcatter.mdcat import extract_headings, main, process_emoji, to_ascii
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def test_to_ascii_spells_dashes_ellipses_and_arrows_in_ascii():
@@ -75,6 +79,26 @@ def test_extract_headings_after_single_line_fence_span():
     """A one-line ```code``` span must not hide subsequent headings."""
     text = "```x = min(a, b)```\n\n# Title\n"
     assert extract_headings(text) == [(1, "Title")]
+
+
+@pytest.mark.parametrize("scan", [process_emoji, extract_headings])
+def test_fence_tracking_reads_each_line_at_most_twice(
+    scan: Callable[[str], object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Recounting the fences above every line made a 32,000-line file take minutes."""
+    calls: list[str] = []
+    is_fence_delimiter = markdown.is_fence_delimiter
+
+    def counting(line: str) -> bool:
+        calls.append(line)
+        return is_fence_delimiter(line)
+
+    monkeypatch.setattr(markdown, "is_fence_delimiter", counting)
+    monkeypatch.setattr(mdcat, "is_fence_delimiter", counting)
+    text = "```\ncode :x:\n```\n# Title :rocket:\n" * 100
+    scan(text)
+    assert len(calls) <= 2 * len(text.split("\n"))
 
 
 class _BrokenPipeStdout:
