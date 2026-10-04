@@ -8,11 +8,18 @@ import sys
 
 import pytest
 
-from madcatter.mdcat import extract_headings, main, process_emoji
+from madcatter.mdcat import extract_headings, main, process_emoji, to_ascii
 
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+def test_to_ascii_spells_dashes_ellipses_and_arrows_in_ascii():
+    # Escaped, as in to_ascii's table: houselint's emdash fix rewrites a literal
+    # em dash to `--`, which once turned the table's entry into a no-op, and
+    # `--ascii` then dropped every em dash.
+    assert to_ascii("wait\u2026 a \u2014 b \u2192 c") == "wait... a -- b -> c"
 
 
 def test_process_emoji_basic():
