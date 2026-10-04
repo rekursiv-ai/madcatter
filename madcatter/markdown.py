@@ -28,6 +28,28 @@ def is_fence_delimiter(line: str) -> bool:
     return "`" not in match.group(2)
 
 
+def inside_fence(lines: list[str]) -> list[bool]:
+    """Report, per line, whether the fence delimiters above it leave it in code.
+
+    One pass carries the state forward. Recounting the delimiters above each
+    line instead made a 32,000-line document take over a minute.
+
+    Args:
+      lines: Source lines, in order.
+
+    Returns:
+      inside: One flag per line, True when an odd number of fence delimiters
+        precede it. A delimiter line reports the state before it.
+
+    """
+    inside: list[bool] = []
+    state = False
+    for line in lines:
+        inside.append(state)
+        state ^= is_fence_delimiter(line)
+    return inside
+
+
 def process_math_blocks(markdown_body: str, enable_math: bool = True) -> str:
     """Convert LaTeX math in markdown to Unicode, leaving code blocks intact.
 
