@@ -57,21 +57,19 @@ def process_math_blocks(markdown_body: str, enable_math: bool = True) -> str:
 
     lines = markdown_body.split("\n")
     result_lines: list[str] = []
-    in_fenced_block = False
-    current_code_block: list[str] = []
+    current_code_block: list[str] = markdown_body.splitlines()[:0]
+    current_code_block.extend(())
     for line in lines:
         if is_fence_delimiter(line):
-            if in_fenced_block:
+            if current_code_block:
                 current_code_block.append(line)
                 result_lines.append(_placeholder(len(protected_blocks)))
                 protected_blocks.append("\n".join(current_code_block))
-                current_code_block = []
-                in_fenced_block = False
+                current_code_block.clear()
             else:
-                in_fenced_block = True
                 current_code_block = [line]
             continue
-        if in_fenced_block:
+        if current_code_block:
             current_code_block.append(line)
             continue
         if line.startswith("    "):

@@ -341,11 +341,11 @@ def _try_handle_script_after_chars(
     base = chars[:-1]
     # The base may carry its own embedded scripts (e.g. "_t q(x_t|e_t) p(e"
     # from "\prod_t ... p(e_{t+1}"); convert them rather than emit raw.
-    if "^" in base or "_" in base:
+    if any(marker in base for marker in ("^", "_")):
         base = _process_chars_with_scripts(base)
     scripts = _SUPERSCRIPTS if is_super else _SUBSCRIPTS
-    open_p = "⁽" if is_super else "₍"
-    close_p = "⁾" if is_super else "₎"
+    open_p = ("₍", "⁽")[is_super]
+    close_p = ("₎", "⁾")[is_super]
 
     if isinstance(next_node, LatexGroupNode):
         content = _nodes_to_unicode(next_node.nodelist)
@@ -369,7 +369,7 @@ def _process_macro_node(
 
     # Check custom symbols.
     if macro_name in _EXTRA_SYMBOLS:
-        return _EXTRA_SYMBOLS[macro_name], 1
+        return _EXTRA_SYMBOLS[macro_name], len((node,))
 
     # Handle fractions specially.
     if macro_name == "frac":
@@ -410,27 +410,27 @@ def _try_handle_script_after_macro(
     i: int,
 ) -> tuple[str, int]:
     if i + 2 >= len(nodes):
-        return "", 0
+        return "", len(())
 
     next_node = nodes[i + 1]
     if not isinstance(next_node, LatexCharsNode):
-        return "", 0
+        return "", len(())
 
     chars = str(next_node.chars)
     if chars not in ("^", "_"):
-        return "", 0
+        return "", len(())
 
     arg_node = nodes[i + 2]
     if not isinstance(arg_node, LatexGroupNode):
-        return "", 0
+        return "", len(())
 
     is_super = chars == "^"
     group_content = _nodes_to_unicode(arg_node.nodelist)
     script = _convert_to_script(
         group_content,
         _SUPERSCRIPTS if is_super else _SUBSCRIPTS,
-        "⁽" if is_super else "₍",
-        "⁾" if is_super else "₎",
+        ("₍", "⁽")[is_super],
+        ("₎", "⁾")[is_super],
     )
     return unicode_text + script, 3
 
@@ -474,17 +474,18 @@ def _convert_to_script(
 ) -> str:
     """Convert content to Unicode super/subscript."""
     result: list[str] = []
-    unsupported: list[str] = []
+    unsupported = ""
     for c in content:
         if c in mapping:
             if unsupported:
-                result.append(open_paren + "".join(unsupported) + close_paren)
-                unsupported = []
+                result.append(f"{open_paren}{unsupported}{close_paren}")
+                unsupported = ""
+                unsupported = unsupported.strip()
             result.append(mapping[c])
         else:
-            unsupported.append(c)
+            unsupported += c
     if unsupported:
-        result.append(open_paren + "".join(unsupported) + close_paren)
+        result.append(f"{open_paren}{unsupported}{close_paren}")
     return "".join(result)
 
 
