@@ -3,7 +3,30 @@
 All notable madcatter changes are documented here. This project follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## 0.1.4 - 2026-10-03
+
+### Fixed
+
+- `latex2unicode`, and math rendering in `mdcat`, now convert every
+  subscript and superscript in a run of text that ends in `_` or `^`
+  right before a braced group. Before, the scripts earlier in that run were
+  emitted raw: `$\prod_t q(x_t|e_t) p(e_{t+1}|e_t,x_t)$` rendered as
+  `∏_t q(x_t|e_t) p(eₜ₊₁|eₜ,xₜ)` and now renders as
+  `∏ₜ q(xₜ|eₜ) p(eₜ₊₁|eₜ,xₜ)`.
+
+### Changed
+
+- The parsed-options parameter of `render_markdown_file`, `watch_file` and
+  `follow_file` in `madcatter.mdcat` is now named `flags` (was `args`).
+  Callers that pass it by position are unaffected.
+
+- README: the sibling-projects list drops a link that no longer resolves.
+
+- Development: type checking uses a bundled, patched typeshed
+  (`packages/rekursiv-ai-typeshed`), which `uv sync` installs as a path
+  dependency. The minimum versions of ty and basedpyright are raised, and
+  the pre-commit configuration is updated. Runtime dependencies and the
+  supported Python versions (3.12+) are unchanged.
 
 ## 0.1.3 - 2026-08-19
 

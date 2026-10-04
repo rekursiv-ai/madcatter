@@ -117,9 +117,11 @@ def to_ascii(text: str) -> str:
 
     """
     text = text.translate(_UNICODE_TO_ASCII_CHARS)
+    # The em dash is escaped: houselint's emdash fix rewrites a literal one to
+    # `--`, which made this entry `("--", "--")` and dropped every em dash.
     for uni, asc in (
         ("…", "..."),
-        ("--", "--"),
+        ("\u2014", "--"),
         ("±", "+/-"),
         ("→", "->"),
         ("←", "<-"),
