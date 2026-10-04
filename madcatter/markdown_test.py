@@ -2,7 +2,20 @@
 
 from __future__ import annotations
 
-from madcatter.markdown import process_math_blocks, strip_frontmatter
+from typing import TYPE_CHECKING
+
+import secrets
+
+from madcatter import markdown
+from madcatter.markdown import (
+    is_fence_delimiter,
+    process_math_blocks,
+    strip_frontmatter,
+)
+
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_process_math_blocks_inline():
@@ -114,6 +127,56 @@ def test_strip_frontmatter_empty():
 def test_strip_frontmatter_unterminated():
     lines = ["---", "title: hi", "still in frontmatter"]
     assert strip_frontmatter(lines) == lines
+
+
+def test_is_fence_delimiter_rejects_backticks_in_info():
+    assert is_fence_delimiter("```language```") is False
+
+
+def test_is_fence_delimiter_accepts_tilde_info():
+    assert is_fence_delimiter("  ~~~language  ") is True
+
+
+def test_process_math_blocks_default_enables_conversion():
+    assert process_math_blocks("$x^2$") == "x²"
+
+
+def test_process_math_blocks_preserves_fenced_block_exactly():
+    text = "before\n```python\n$x^2$\n```\nafter"
+    assert process_math_blocks(text) == text
+
+
+def test_process_math_blocks_preserves_indented_code_before_following_math():
+    text = "    $x^2$\nfollowing $y^2$"
+    assert process_math_blocks(text) == "    $x^2$\nfollowing y²"
+
+
+def test_process_math_blocks_preserves_unterminated_fence_exactly():
+    text = "before\n~~~\n$x^2$\ntail"
+    assert process_math_blocks(text) == text
+
+
+def test_process_math_blocks_preserves_math_inside_inline_code():
+    text = "`$x^2$` and $y^2$"
+    assert process_math_blocks(text) == "`$x^2$` and y²"
+
+
+def test_process_math_blocks_uses_eight_byte_nonce(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[int] = []
+
+    def token_hex(nbytes: int) -> str:
+        calls.append(nbytes)
+        return "fixed"
+
+    monkeypatch.setattr(secrets, "token_hex", token_hex)
+    assert markdown.process_math_blocks("`$x^2$`") == "`$x^2$`"
+    assert calls == [8]
+
+
+def test_strip_frontmatter_closes_at_first_possible_line():
+    assert strip_frontmatter(["---", "---", "body"]) == ["body"]
 
 
 if __name__ == "__main__":

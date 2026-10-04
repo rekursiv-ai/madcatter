@@ -102,6 +102,19 @@ _UNICODE_TO_ASCII_CHARS = str.maketrans(
         "\u201d": '"',  # Curly quotes.
         "\u00d7": "x",
         "\u00f7": "/",  # Multiply, divide.
+        "…": "...",
+        "±": "+/-",
+        "→": "->",
+        "←": "<-",
+        "↔": "<->",
+        "≤": "<=",
+        "≥": ">=",
+        "≠": "!=",
+        "≈": "~=",
+        "📑": "[TOC]",
+        # Escaped: houselint's emdash fix rewrites a literal one to `--`, which
+        # made this entry `"--": "--"` and dropped every em dash.
+        "\u2014": "--",
     },
 )
 
@@ -117,22 +130,6 @@ def to_ascii(text: str) -> str:
 
     """
     text = text.translate(_UNICODE_TO_ASCII_CHARS)
-    # The em dash is escaped: houselint's emdash fix rewrites a literal one to
-    # `--`, which made this entry `("--", "--")` and dropped every em dash.
-    for uni, asc in (
-        ("…", "..."),
-        ("\u2014", "--"),
-        ("±", "+/-"),
-        ("→", "->"),
-        ("←", "<-"),
-        ("↔", "<->"),
-        ("≤", "<="),
-        ("≥", ">="),
-        ("≠", "!="),
-        ("≈", "~="),
-        ("📑", "[TOC]"),
-    ):
-        text = text.replace(uni, asc)
     return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
 
 
@@ -188,12 +185,13 @@ def process_emoji(text: str) -> str:
 
     lines = text.split("\n")
     result: list[str] = []
-    in_fence = False
-    for line in lines:
-        if is_fence_delimiter(line):
-            in_fence = not in_fence
-            result.append(line)
-        elif in_fence or line.startswith("    "):
+    for index, line in enumerate(lines):
+        in_fence = (
+            sum(is_fence_delimiter(previous_line) for previous_line in lines[:index])
+            % 2
+            == 1
+        )
+        if is_fence_delimiter(line) or in_fence or line.startswith("    "):
             result.append(line)
         else:
             result.append(re.sub(r":([a-z0-9_+\-]+):", _replace, line))
@@ -232,13 +230,18 @@ def extract_headings(markdown_body: str) -> list[tuple[int, str]]:
 
     """
     headings: list[tuple[int, str]] = []
-    in_code_block = False
+    lines = markdown_body.split("\n")
 
-    for line in markdown_body.split("\n"):
+    for index, line in enumerate(lines):
         # Track code block boundaries.
         if is_fence_delimiter(line):
-            in_code_block = not in_code_block
             continue
+
+        in_code_block = (
+            sum(is_fence_delimiter(previous_line) for previous_line in lines[:index])
+            % 2
+            == 1
+        )
 
         # Skip lines inside code blocks.
         if in_code_block:
@@ -268,7 +271,7 @@ def render_toc(headings: list[tuple[int, str]], console: Console) -> None:
             stack.pop()
 
         # Add node under current parent.
-        parent_tree = stack[-1][1] if stack else tree
+        parent_tree = stack[-1][1]
         node = parent_tree.add(f"[bold]{title}[/bold]")
         stack.append((level, node))
 
@@ -394,8 +397,7 @@ def filter_section(markdown_body: str, section_name: str) -> str:
     """
     lines = markdown_body.split("\n")
     section_lines: list[str] = []
-    in_section = False
-    section_level = 0
+    section_state: dict[str, int] = {}
 
     for line in lines:
         if match := re.match(r"^(#{1,6})\s+(.+)$", line):
@@ -403,15 +405,14 @@ def filter_section(markdown_body: str, section_name: str) -> str:
             title = match.group(2).strip()
 
             if title.lower() == section_name.lower():
-                in_section = True
-                section_level = level
+                section_state["level"] = level
                 section_lines.append(line)
-            elif in_section and level <= section_level:
+            elif "level" in section_state and level <= section_state["level"]:
                 # Hit a same-or-higher level heading, end of section.
                 break
-            elif in_section:
+            elif "level" in section_state:
                 section_lines.append(line)
-        elif in_section:
+        elif "level" in section_state:
             section_lines.append(line)
 
     return "\n".join(section_lines)
@@ -426,13 +427,8 @@ def render_diff(file1: str, file2: str, console: Console) -> None:
       console: Rich Console to write colored diff to.
 
     """
-    with (
-        Path(file1).open(encoding="utf-8") as f1,
-        Path(file2).open(encoding="utf-8") as f2,
-    ):
-        lines1 = f1.readlines()
-        lines2 = f2.readlines()
-
+    lines1 = Path(file1).read_text().splitlines(keepends=True)
+    lines2 = Path(file2).read_text().splitlines(keepends=True)
     diff = difflib.unified_diff(lines1, lines2, fromfile=file1, tofile=file2)
 
     for diff_line in diff:
@@ -472,8 +468,7 @@ def follow_file(
 
     """
     anchors: collections.deque[bytes] = collections.deque(maxlen=anchor_window)
-    first = True
-    last_data = b""
+    last_data: bytes | None = None
     console.print(f"[dim]Following {path} (Ctrl+C to quit)...[/dim]\n")
 
     try:
@@ -483,23 +478,24 @@ def follow_file(
                 time.sleep(poll)
                 continue
 
-            if data == last_data:
+            first_data = last_data is None
+            if last_data is not None and data == last_data:
                 time.sleep(poll)
                 continue
             last_data = data
 
-            lines = data.decode("utf-8", "replace").splitlines()
+            lines = data.decode(errors="replace").splitlines()
             if flags.no_frontmatter:
                 lines = strip_frontmatter(lines)
 
-            if first:
-                tail = lines[-flags.follow_lines :] if flags.follow_lines else lines
-                first = False
+            tail_line_count = flags.follow_lines or len(lines)
+            if first_data:
+                tail = lines[-tail_line_count:]
             else:
                 idx = _find_anchor_index(lines, anchors)
                 if idx is None:
                     console.print(Rule("reopened", style="dim"))
-                    tail = lines[-flags.follow_lines :] if flags.follow_lines else lines
+                    tail = lines[-tail_line_count:]
                 else:
                     tail = lines[idx + 1 :]
 
@@ -694,8 +690,11 @@ def main() -> int:
 
 
 def _main() -> int:
+    # pragma: no mutate start -- the "" fallback only runs under -OO.
+    description = (__doc__ or "").strip()
+    # pragma: no mutate end
     parser = argparse.ArgumentParser(
-        description=(__doc__ or "").strip(),
+        description=description,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     flags, remaining = _parse_args(parser)
@@ -794,7 +793,7 @@ def _main() -> int:
 
 
 def _line_hash(line: str) -> bytes:
-    return hashlib.blake2b(line.encode("utf-8"), digest_size=16).digest()
+    return hashlib.blake2b(line.encode(), digest_size=16).digest()
 
 
 def _find_anchor_index(
@@ -805,8 +804,8 @@ def _find_anchor_index(
     if not anchors:
         return None
     anchor_set = set(anchors)
-    for i in range(len(lines) - 1, -1, -1):
-        if _line_hash(lines[i]) in anchor_set:
+    for i, line in reversed(list(enumerate(lines))):
+        if _line_hash(line) in anchor_set:
             return i
     return None
 
@@ -859,7 +858,6 @@ def _parse_args(
     """Add mdcat flags to ``parser`` and parse."""
     parser.add_argument(
         "path",
-        metavar="PATH",
         nargs="*",
         help="path(s) to markdown file(s), or - for stdin",
     )
@@ -867,35 +865,29 @@ def _parse_args(
     color_group.add_argument(
         "-c",
         "--force-color",
-        dest="force_color",
         action="store_true",
         default=None,
         help="force color for non-terminals",
     )
     color_group.add_argument(
         "--ascii",
-        dest="ascii",
         action="store_true",
         help="ASCII-only output (no ANSI codes, no Unicode)",
     )
     parser.add_argument(
         "-t",
         "--code-theme",
-        dest="code_theme",
         default="monokai",
         help="pygments code theme",
     )
     parser.add_argument(
         "-i",
         "--inline-code-lexer",
-        dest="inline_code_lexer",
-        default=None,
         help="inline_code_lexer",
     )
     parser.add_argument(
         "-y",
         "--hyperlinks",
-        dest="hyperlinks",
         action="store_true",
         default=True,
         help="enable hyperlinks",
@@ -904,90 +896,70 @@ def _parse_args(
         "-w",
         "--width",
         type=int,
-        dest="width",
-        default=None,
         help="width of output (default will auto-detect)",
     )
     parser.add_argument(
         "--pad",
         type=int,
-        dest="pad",
-        default=None,
-        metavar="WIDTH",
         help="pad lines to WIDTH (default: no padding, strip trailing whitespace)",
     )
     parser.add_argument(
         "-j",
         "--justify",
-        dest="justify",
         action="store_true",
         help="enable full text justify",
     )
     parser.add_argument(
         "-p",
         "--page",
-        dest="page",
         action="store_true",
         help="use pager to scroll output",
     )
     parser.add_argument(
         "--separator",
-        dest="separator",
         action="store_true",
         help="add separator between multiple files",
     )
     mode_group = parser.add_mutually_exclusive_group()
     mode_group.add_argument(
         "--toc",
-        dest="toc",
         action="store_true",
         help="show table of contents",
     )
     mode_group.add_argument(
         "--links",
-        dest="links",
         action="store_true",
         help="extract and list all links",
     )
     mode_group.add_argument(
         "--check-links",
-        dest="check_links",
         action="store_true",
         help="validate all links are reachable",
     )
     mode_group.add_argument(
         "--code-only",
-        dest="code_only",
         action="store_true",
         help="show only code blocks",
     )
     parser.add_argument(
         "--code-lang",
-        dest="code_lang",
-        default=None,
         help="filter code blocks by language",
     )
     parser.add_argument(
         "--style",
-        dest="style",
         choices=list(STYLE_PROFILES.keys()),
         help="use predefined style profile",
     )
     parser.add_argument(
         "--export-html",
-        dest="export_html",
-        metavar="OUTPUT",
         help="export as HTML to file",
     )
     parser.add_argument(
         "--export-ansi",
-        dest="export_ansi",
-        metavar="OUTPUT",
         help="export ANSI colored output to file",
     )
     parser.add_argument(
         "--watch",
-        dest="watch",
         action="store_true",
         help="watch file for changes and re-render",
     )
@@ -995,35 +967,27 @@ def _parse_args(
         "-f",
         "-F",
         "--follow",
-        dest="follow",
         action="store_true",
         help="follow file tail-F-style: emit only new lines, survive rewrites",
     )
     parser.add_argument(
         "-n",
         "--follow-lines",
-        dest="follow_lines",
         type=int,
         default=0,
-        metavar="N",
         help="with --follow: show last N lines on first attach/reopen (0 = all)",
     )
     parser.add_argument(
         "--no-frontmatter",
-        dest="no_frontmatter",
         action="store_true",
         help="strip leading YAML frontmatter (--- ... ---) before rendering",
     )
     parser.add_argument(
         "--section",
-        dest="section",
-        metavar="HEADING",
         help="show only specific section by heading name",
     )
     parser.add_argument(
         "--diff",
-        dest="diff",
-        metavar="FILE2",
         help="show diff with another markdown file",
     )
     parser.add_argument(
