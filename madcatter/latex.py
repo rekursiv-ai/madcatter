@@ -391,7 +391,7 @@ def _process_macro_node(
 
 def _try_convert_fraction(node: LatexMacroNode) -> str:
     args = node.nodeargd
-    if not (args and args.argnlist and len(args.argnlist) >= 2):
+    if args is None or args.argnlist is None or len(args.argnlist) < 2:
         return ""
 
     numer_node = args.argnlist[0]
@@ -437,8 +437,8 @@ def _try_handle_script_after_macro(
 
 def _reconstruct_macro_latex(node: LatexMacroNode) -> str:
     result = "\\" + node.macroname
-    if node.nodeargd and node.nodeargd.argnlist:
-        for arg in node.nodeargd.argnlist:
+    if node.nodeargd is not None:
+        for arg in node.nodeargd.argnlist or ():
             if arg:
                 arg_content = _reconstruct_nodes_latex(arg.nodelist)
                 result += "{" + arg_content + "}"
@@ -460,10 +460,7 @@ def _reconstruct_nodes_latex(nodes: list[LatexNode]) -> str:
 
 def _convert_fraction(numer: str, denom: str) -> str:
     """Convert fraction to Unicode if available."""
-    frac_unicode = _FRACTIONS.get((numer, denom))
-    if frac_unicode:
-        return frac_unicode
-    return f"{numer}/{denom}"
+    return _FRACTIONS.get((numer, denom), f"{numer}/{denom}")
 
 
 def _convert_to_script(

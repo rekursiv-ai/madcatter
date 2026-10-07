@@ -57,7 +57,7 @@ class _Flags(Protocol):
     inline_code_lexer: str | None
     hyperlinks: bool
     width: int | None
-    pad: int | None
+    pad: int
     justify: bool
     page: bool
     separator: bool
@@ -65,16 +65,16 @@ class _Flags(Protocol):
     links: bool
     check_links: bool
     code_only: bool
-    code_lang: str | None
-    style: str | None
-    export_html: str | None
-    export_ansi: str | None
+    code_lang: str
+    style: str
+    export_html: str
+    export_ansi: str
     watch: bool
     follow: bool
     follow_lines: int
     no_frontmatter: bool
-    section: str | None
-    diff: str | None
+    section: str
+    diff: str
     math: bool
 
 
@@ -286,11 +286,11 @@ def extract_links(markdown_body: str) -> list[str]:
     for token in tokens:
         if token.type == "link_open":
             href = token.attrGet("href")
-            if href and isinstance(href, str):
+            if isinstance(href, str) and href:
                 links.append(href)
         elif token.type == "image":
             src = token.attrGet("src")
-            if src and isinstance(src, str):
+            if isinstance(src, str) and src:
                 links.append(src)
 
     return links
@@ -329,8 +329,8 @@ def check_links(links: list[str], console: Console) -> None:
 
 def extract_code_blocks(
     markdown_body: str,
-    language_filter: str | None = None,
-) -> list[tuple[str | None, str]]:
+    language_filter: str = "",
+) -> list[tuple[str, str]]:
     """Extract code blocks from markdown.
 
     Args:
@@ -344,20 +344,20 @@ def extract_code_blocks(
     md = MarkdownIt()
     tokens = md.parse(markdown_body)
 
-    code_blocks: list[tuple[str | None, str]] = []
+    code_blocks: list[tuple[str, str]] = []
     for token in tokens:
         if token.type == "fence":
-            lang = token.info.strip() if token.info else None
+            lang = token.info.strip()
             code = token.content
 
-            if language_filter is None or lang == language_filter:
+            if not language_filter or lang == language_filter:
                 code_blocks.append((lang, code))
 
     return code_blocks
 
 
 def render_code_blocks(
-    code_blocks: list[tuple[str | None, str]],
+    code_blocks: list[tuple[str, str]],
     console: Console,
 ) -> None:
     """Render code blocks.
@@ -891,6 +891,7 @@ def _parse_args(
     parser.add_argument(
         "--pad",
         type=int,
+        default=0,
         help="pad lines to WIDTH (default: no padding, strip trailing whitespace)",
     )
     parser.add_argument(
@@ -933,19 +934,23 @@ def _parse_args(
     )
     parser.add_argument(
         "--code-lang",
+        default="",
         help="filter code blocks by language",
     )
     parser.add_argument(
         "--style",
+        default="",
         choices=list(STYLE_PROFILES.keys()),
         help="use predefined style profile",
     )
     parser.add_argument(
         "--export-html",
+        default="",
         help="export as HTML to file",
     )
     parser.add_argument(
         "--export-ansi",
+        default="",
         help="export ANSI colored output to file",
     )
     parser.add_argument(
@@ -974,10 +979,12 @@ def _parse_args(
     )
     parser.add_argument(
         "--section",
+        default="",
         help="show only specific section by heading name",
     )
     parser.add_argument(
         "--diff",
+        default="",
         help="show diff with another markdown file",
     )
     parser.add_argument(

@@ -162,7 +162,7 @@ def test_extract_code_blocks_and_filter() -> None:
 def test_render_toc_and_code_blocks() -> None:
     console = Console(file=StringIO(), force_terminal=False, record=True)
     mdcat.render_toc([(1, "A"), (2, "B")], console)
-    mdcat.render_code_blocks([("python", "print(1)\n"), (None, "text")], console)
+    mdcat.render_code_blocks([("python", "print(1)\n"), ("", "text")], console)
     output = console.export_text()
     assert "Table of Contents" in output
     assert "Code Block 1 (python)" in output
@@ -451,7 +451,7 @@ class TestOwnedParsing:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         class Token:
-            def __init__(self, info: str | None, content: str) -> None:
+            def __init__(self, info: str, content: str) -> None:
                 self.type = "fence"
                 self.info = info
                 self.content = content
@@ -459,11 +459,11 @@ class TestOwnedParsing:
         class Parser:
             def parse(self, text: str) -> list[Token]:
                 del text
-                return [Token(None, "plain"), Token(" python ", "py")]
+                return [Token("", "plain"), Token(" python ", "py")]
 
         monkeypatch.setattr(mdcat, "MarkdownIt", Parser)
         assert mdcat.extract_code_blocks("ignored") == [
-            (None, "plain"),
+            ("", "plain"),
             ("python", "py"),
         ]
         assert mdcat.extract_code_blocks("ignored", "python") == [("python", "py")]
@@ -484,7 +484,7 @@ class TestOwnedRendering:
 
     def test_render_code_blocks_renders_titles_and_spacing(self) -> None:
         console = Console(file=StringIO(), force_terminal=False, record=True)
-        mdcat.render_code_blocks([(None, "one"), ("python", "two")], console)
+        mdcat.render_code_blocks([("", "one"), ("python", "two")], console)
         output = console.export_text()
         assert "Code Block 1" in output
         assert "Code Block 2 (python)" in output
@@ -737,7 +737,7 @@ class TestMadcatterTailAndCliB:
         assert flags.code_theme == "monokai"
         assert flags.hyperlinks is True
         assert flags.width is None
-        assert flags.pad is None
+        assert flags.pad == 0
         assert flags.justify is False
         assert flags.page is False
         assert flags.separator is False
@@ -853,7 +853,7 @@ class TestOwnedMutationBoundaries:
         monkeypatch.setattr(mdcat, "Syntax", Syntax)
         monkeypatch.setattr(mdcat, "Panel", Panel)
         mdcat.render_code_blocks(
-            [(None, "one"), ("python", "two")],
+            [("", "one"), ("python", "two")],
             Console(file=StringIO(), force_terminal=False, width=200),
         )
         assert ("syntax", ("one", "text", {"theme": "monokai"})) in calls
@@ -1151,7 +1151,7 @@ class TestOwnedCodeRenderingContract:
         monkeypatch.setattr(mdcat, "Syntax", Syntax)
         monkeypatch.setattr(mdcat, "Panel", Panel)
         mdcat.render_code_blocks(
-            [(None, "one"), ("python", "two")],
+            [("", "one"), ("python", "two")],
             Console(file=stream, force_terminal=False, width=200),
         )
         assert [panel["title"] for panel in panels] == [
@@ -1626,10 +1626,10 @@ class TestMadcatterRenderModesB:
             argparse.ArgumentParser(),
             ["--code-only", "--code-lang", "python"],
         )
-        rendered: list[list[tuple[str | None, str]]] = []
+        rendered: list[list[tuple[str, str]]] = []
 
         def render_code_blocks(
-            blocks: list[tuple[str | None, str]],
+            blocks: list[tuple[str, str]],
             actual: Console,
         ) -> None:
             del actual
@@ -1710,7 +1710,7 @@ class TestOwnedMutationCoverage:
         del monkeypatch
         buf = StringIO()
         mdcat.render_code_blocks(
-            [(None, "one"), ("python", "two")],
+            [("", "one"), ("python", "two")],
             Console(file=buf, force_terminal=False),
         )
         output = buf.getvalue()
@@ -2212,7 +2212,7 @@ class TestOwnedMutationExactC:
 
         seen: list[object] = []
 
-        def extract(body: str, language: str | None) -> list[tuple[str | None, str]]:
+        def extract(body: str, language: str) -> list[tuple[str, str]]:
             del body
             seen.append(language)
             return []
@@ -2565,7 +2565,7 @@ class TestOwnedMutationExactG:
             printed.append(value)
 
         monkeypatch.setattr(console, "print", record)
-        mdcat.render_code_blocks([(None, "one"), ("python", "two")], console)
+        mdcat.render_code_blocks([("", "one"), ("python", "two")], console)
         assert printed[1] is None
         assert len(printed) == 3
 
