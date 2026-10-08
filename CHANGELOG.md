@@ -3,6 +3,16 @@
 All notable madcatter changes are documented here. This project follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.1.5 - 2026-10-07
+
+### Changed
+
+- Development: the patched typeshed now also types `typing.get_type_hints`
+  as `dict[str, object]`, the pre-commit configuration is updated, a
+  worker-count helper is vendored as an internal module, and internal LaTeX
+  conversion code is simplified without changing its output. Runtime
+  dependencies and the supported Python versions (3.12+) are unchanged.
+
 ## 0.1.4 - 2026-10-03
 
 ### Fixed
