@@ -3,7 +3,7 @@
 
 [project]
 name = "madcatter"
-version = "0.1.4"
+version = "0.1.5"
 description = "Rich-based Markdown console renderer (mdcat) with emoji, LaTeX math, and preprocessing helpers."
 readme = "README.md"
 requires-python = ">=3.12"
