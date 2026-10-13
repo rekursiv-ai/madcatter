@@ -2759,6 +2759,6 @@ class TestOwnedMutationExactH:
 
 
 if __name__ == "__main__":
-    from madcatter.lib.testing.main import test_main
+    from madcatter.lib.testing.runner import test_main
 
     test_main(__file__)
