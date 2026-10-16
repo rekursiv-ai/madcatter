@@ -575,7 +575,14 @@ class TestMadcatterTailAndCliB:
     ) -> None:
         flags, _ = mdcat._parse_args(argparse.ArgumentParser(), ["--follow-lines", "2"])
         stream = StringIO()
-        console = Console(file=stream, force_terminal=True, record=True, width=200)
+        console = Console(
+            file=stream,
+            force_terminal=True,
+            color_system="standard",
+            no_color=False,
+            record=True,
+            width=200,
+        )
         values = iter([b"old\nanchor\n", b"new1\nnew2\nnew3\n", b"new1\nnew2\nnew3\n"])
         rules: list[tuple[str, dict[str, object]]] = []
         rendered: list[str] = []
@@ -866,7 +873,13 @@ class TestOwnedMutationBoundaries:
         first.write_text("old\n")
         second.write_text("new\n")
         stream = StringIO()
-        console = Console(file=stream, force_terminal=True, width=200)
+        console = Console(
+            file=stream,
+            force_terminal=True,
+            color_system="standard",
+            no_color=False,
+            width=200,
+        )
         mdcat.render_diff(str(first), str(second), console)
         output = stream.getvalue()
         assert "---" in output
@@ -1031,7 +1044,13 @@ class TestOwnedMutationEdges:
         first.write_text("same\nold\n")
         second.write_text("same\nnew\n")
         stream = StringIO()
-        console = Console(file=stream, force_terminal=True, width=200)
+        console = Console(
+            file=stream,
+            force_terminal=True,
+            color_system="standard",
+            no_color=False,
+            width=200,
+        )
         mdcat.render_diff(str(first), str(second), console)
         assert " same" in stream.getvalue()
         assert "\x1b[2m" in stream.getvalue()
@@ -1398,7 +1417,13 @@ class TestMadcatterRenderModesB:
             ["--no-frontmatter"],
         )
         stream = StringIO()
-        console = Console(file=stream, force_terminal=True, width=200)
+        console = Console(
+            file=stream,
+            force_terminal=True,
+            color_system="standard",
+            no_color=False,
+            width=200,
+        )
         values = iter(
             [
                 b"---\ntitle: x\n---\na\n\nb\n",
