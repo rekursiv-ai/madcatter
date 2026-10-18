@@ -356,6 +356,7 @@ dependencies = [
 [package.dev-dependencies]
 debug = [
     { name = "ipython" },
+    { name = "tqdm" },
 ]
 dev = [
     { name = "basedpyright" },
@@ -370,6 +371,7 @@ dev = [
     { name = "rekursiv-ai-typeshed" },
     { name = "rekursiv-ai-typings" },
     { name = "ruff" },
+    { name = "tqdm" },
     { name = "ty" },
     { name = "types-requests" },
 ]
@@ -416,7 +418,10 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-debug = [{ name = "ipython" }]
+debug = [
+    { name = "ipython" },
+    { name = "tqdm" },
+]
 dev = [
     { name = "basedpyright", specifier = ">=1.40.1" },
     { name = "codespell", specifier = ">=2.2.4" },
@@ -430,6 +435,7 @@ dev = [
     { name = "rekursiv-ai-typeshed", git = "https://github.com/rekursiv-ai/typings?subdirectory=typeshed&branch=main" },
     { name = "rekursiv-ai-typings", git = "https://github.com/rekursiv-ai/typings?branch=main" },
     { name = "ruff" },
+    { name = "tqdm" },
     { name = "ty", specifier = ">=0.0.84" },
     { name = "types-requests", specifier = ">=2.28" },
 ]
@@ -747,8 +753,8 @@ wheels = [
 
 [[package]]
 name = "rekursiv-ai-typeshed"
-version = "0.1.4"
-source = { git = "https://github.com/rekursiv-ai/typings?subdirectory=typeshed&branch=main#7747ab32165010acf4a134170fe7543d4b96946b" }
+version = "0.1.5"
+source = { git = "https://github.com/rekursiv-ai/typings?subdirectory=typeshed&branch=main#be5b5e9b89ba264ce14d0b155beaff030b4ed944" }
 dependencies = [
     { name = "basedpyright" },
     { name = "ty" },
@@ -756,8 +762,8 @@ dependencies = [
 
 [[package]]
 name = "rekursiv-ai-typings"
-version = "0.1.4"
-source = { git = "https://github.com/rekursiv-ai/typings?branch=main#7747ab32165010acf4a134170fe7543d4b96946b" }
+version = "0.1.5"
+source = { git = "https://github.com/rekursiv-ai/typings?branch=main#be5b5e9b89ba264ce14d0b155beaff030b4ed944" }
 
 [[package]]
 name = "requests"
@@ -830,6 +836,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/28/e3/55dcc2cfbc3ca9c29519eb6884dd1415ecb53b0e934862d3559ddcb7e20b/stack_data-0.6.3.tar.gz", hash = "sha256:836a778de4fec4dcd1dcd89ed8abff8a221f58308462e1c4aa2a3cf30148f0b9", size = 44707, upload-time = "2023-09-30T13:58:05.479Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f1/7b/ce1eafaf1a76852e2ec9b22edecf1daa58175c090266e9f6c64afcd81d91/stack_data-0.6.3-py3-none-any.whl", hash = "sha256:d5558e0c25a4cb0853cddad3d77da9891a08cb85dd9f9f91b9f8cd66e511e695", size = 24521, upload-time = "2023-09-30T13:58:03.53Z" },
+]
+
+[[package]]
+name = "tqdm"
+version = "4.70.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0d/ea/b2a5bd54b28a324dae8211928b2d730b6547500342c7e6c6dea08bd0a485/tqdm-4.70.1.tar.gz", hash = "sha256:cefd0eca11b2a37a3aee776544d4f4ae913f02688135b5556b8788dfa474afc4", size = 171846, upload-time = "2026-09-11T07:25:16.601Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a7/03/921a3d3c75785aca9ebfbfcabfbc3a1be12e2ab5265deb026d55a5a3f83e/tqdm-4.70.1-py3-none-any.whl", hash = "sha256:c293e525e6fef9c20e8728fd4612df02a0aa31bb5fe91ecd93e123b1b7bffa73", size = 80199, upload-time = "2026-09-11T07:25:14.599Z" },
 ]
 
 [[package]]
