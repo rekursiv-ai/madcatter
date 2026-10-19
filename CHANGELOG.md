@@ -3,6 +3,13 @@
 All notable madcatter changes are documented here. This project follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Changed
+
+- The wheel no longer ships `madcatter.lib.testing`, whose modules import
+  `pytest`, a test-only dependency.
+
 ## 0.1.5 - 2026-10-07
 
 ### Changed
