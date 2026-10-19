@@ -99,6 +99,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["madcatter"]
+# The vendored pytest harness imports pytest, a test-group dependency.
 exclude = ["**/*_test.py", "**/conftest.py", "madcatter/lib/testing/**"]
 
 [tool.hatch.build.targets.sdist]
@@ -372,7 +373,6 @@ extend-safe-fixes = [
     # NEVER ADD MORE SUPPRESSIONS! SUPPRESS IN FILE!
 ]
 
-
 "*.ipynb" = [
     "ARG001",  # Unused function argument (callbacks).
     "BLE001",  # Blind exception (sandboxed exec).
@@ -449,7 +449,6 @@ extend-safe-fixes = [
     "T201",    # Print found. (Eval scripts use print for output.)
     # NEVER ADD MORE SUPPRESSIONS! SUPPRESS IN FILE!
 ]
-
 
 # NEVER ADD MORE SUPPRESSIONS! SUPPRESS IN FILE!
 
@@ -587,7 +586,6 @@ reportUnsafeMultipleInheritance = false    # Mixin patterns are intentional.
 reportUnusedCallResult = false             # Discarding return values is idiomatic Python.
 reportInvalidCast = false                  # All cast() calls are intentional.
 # NEVER ADD MORE SUPPRESSIONS! SUPPRESS IN FILE!
-
 
 [tool.ty.environment]
 python-version = "3.12"  # Intentional; test at 3.12 for exports.
