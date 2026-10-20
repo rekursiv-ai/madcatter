@@ -272,7 +272,7 @@ def _latex_to_unicode_ast(latex: str) -> str:
 def _process_chars_with_scripts(chars: str) -> str:
     """Process character string containing unbraced ^x or _x patterns."""
     converter = LatexNodes2Text()
-    unicode_text = str(converter.latex_to_text(chars))
+    unicode_text = converter.latex_to_text(chars)
     return _convert_scripts(unicode_text)
 
 
@@ -311,7 +311,7 @@ def _process_chars_node(
     i: int,
     converter: LatexNodes2Text,
 ) -> tuple[str, int]:
-    chars = str(node.chars)
+    chars = node.chars
 
     # Handle trailing ^ or _ followed by group/macro.
     if chars.endswith(("^", "_")):
@@ -324,7 +324,7 @@ def _process_chars_node(
         return _process_chars_with_scripts(chars), 1
 
     # Regular character sequence.
-    return str(converter.latex_to_text(chars)), 1
+    return converter.latex_to_text(chars), 1
 
 
 def _try_handle_script_after_chars(
@@ -353,7 +353,7 @@ def _try_handle_script_after_chars(
 
     if isinstance(next_node, LatexMacroNode):
         macro_text = "\\" + next_node.macroname
-        content = str(converter.latex_to_text(macro_text))
+        content = converter.latex_to_text(macro_text)
         return base + _convert_to_script(content, scripts, open_p, close_p), 2
 
     return "", 0
@@ -365,7 +365,7 @@ def _process_macro_node(
     i: int,
     converter: LatexNodes2Text,
 ) -> tuple[str, int]:
-    macro_name = str(node.macroname)
+    macro_name = node.macroname
 
     # Check custom symbols.
     if macro_name in _EXTRA_SYMBOLS:
@@ -379,7 +379,7 @@ def _process_macro_node(
 
     # Convert macro normally.
     macro_latex = _reconstruct_macro_latex(node)
-    unicode_text = str(converter.latex_to_text(macro_latex))
+    unicode_text = converter.latex_to_text(macro_latex)
 
     # Check if followed by ^{...} or _{...}.
     result, skip = _try_handle_script_after_macro(unicode_text, nodes, i)
@@ -416,7 +416,7 @@ def _try_handle_script_after_macro(
     if not isinstance(next_node, LatexCharsNode):
         return "", 0
 
-    chars = str(next_node.chars)
+    chars = next_node.chars
     if chars not in ("^", "_"):
         return "", 0
 
@@ -449,7 +449,7 @@ def _reconstruct_nodes_latex(nodes: list[LatexNode]) -> str:
     result: list[str] = []
     for node in nodes:
         if isinstance(node, LatexCharsNode):
-            result.append(str(node.chars))
+            result.append(node.chars)
         elif isinstance(node, LatexMacroNode):
             result.append(_reconstruct_macro_latex(node))
         elif isinstance(node, LatexGroupNode):
