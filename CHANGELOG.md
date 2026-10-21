@@ -3,6 +3,14 @@
 All notable madcatter changes are documented here. This project follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Removed
+
+- `madcatter.lib.worker_count` is no longer part of the package. It moved, with
+  the pre-commit gates that use it, to `tools/precommit/` at the repository
+  root, which the wheel does not ship.
+
 ## 0.1.6 - 2026-10-21
 
 ### Changed
