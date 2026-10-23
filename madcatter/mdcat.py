@@ -569,6 +569,24 @@ def export_html(markdown_body: str, output_path: str) -> None:
         f.write(html_template)
 
 
+def set_terminal_title(title: str, tty: str = "/dev/tty") -> None:
+    """Set the terminal window title, even when stdout is a pipe.
+
+    The OSC code goes to the controlling terminal, not stdout: a pager such
+    as ``less`` would otherwise swallow it. No-op without a terminal.
+
+    Args:
+      title: Window title.
+      tty: Controlling-terminal device.
+
+    """
+    try:
+        with Path(tty).open("w", encoding="utf-8") as terminal:
+            terminal.write(f"\x1b]0;{title}\x07")
+    except OSError:
+        return
+
+
 def render_markdown_file(path: str, console: Console, flags: _Flags) -> str:
     """Read and render a markdown file, returning the body.
 
@@ -738,6 +756,9 @@ def _main() -> int:
     # Ensure we have at least one file.
     if not flags.path:
         flags.path = ["-"]
+
+    if names := [Path(path).name for path in flags.path if path != "-"]:
+        set_terminal_title(" ".join(names))
 
     # Handle watch mode.
     if flags.watch:
