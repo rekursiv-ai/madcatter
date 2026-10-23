@@ -20,11 +20,25 @@ import pytest
 import requests
 
 from madcatter import markdown, mdcat
-from madcatter.mdcat import extract_headings, main, process_emoji, to_ascii
+from madcatter.mdcat import (
+    extract_headings,
+    main,
+    process_emoji,
+    set_terminal_title,
+    to_ascii,
+)
 
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+
+@pytest.fixture(autouse=True)
+def titles(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Record terminal titles instead of writing to the real /dev/tty."""
+    recorded: list[str] = []
+    monkeypatch.setattr(mdcat, "set_terminal_title", recorded.append)
+    return recorded
 
 
 def test_to_ascii_spells_dashes_ellipses_and_arrows_in_ascii():
@@ -2148,6 +2162,39 @@ class TestOwnedFenceParity:
 
 
 class TestOwnedMutationExactC:
+    def test_main_titles_terminal_with_file_names_even_when_piped(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        titles: list[str],
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        a = tmp_path / "a.md"
+        b = tmp_path / "b.md"
+        a.write_text("x")
+        b.write_text("y")
+        monkeypatch.setattr(sys, "argv", ["mdcat", "-c", str(a), "-", str(b)])
+        monkeypatch.setattr(sys, "stdin", StringIO("z"))
+        assert mdcat._main() == 0
+        assert titles == ["a.md b.md"]
+        assert "\x1b]" not in capsys.readouterr().out
+
+    def test_main_leaves_title_alone_for_stdin(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        titles: list[str],
+    ) -> None:
+        monkeypatch.setattr(sys, "stdin", StringIO("z"))
+        monkeypatch.setattr(sys, "argv", ["mdcat", "-"])
+        assert mdcat._main() == 0
+        assert titles == []
+
+    def test_set_terminal_title_writes_osc_to_tty(self, tmp_path: Path) -> None:
+        tty = tmp_path / "tty"
+        set_terminal_title("doc.md", str(tty))
+        assert tty.read_text() == "\x1b]0;doc.md\x07"
+        set_terminal_title("doc.md", str(tmp_path / "no" / "tty"))
+
     def test_main_console_kwargs_are_exact(
         self,
         tmp_path: Path,
