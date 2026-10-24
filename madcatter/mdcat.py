@@ -25,13 +25,18 @@ from markdown_it import MarkdownIt
 from rich.console import Console, ConsoleOptions, RenderResult
 from rich.markdown import (
     Heading,
+    ListItem,
     Markdown as MarkdownBase,
+    MarkdownContext,
     MarkdownElement,
+    Paragraph,
 )
 from rich.panel import Panel
 from rich.rule import Rule
+from rich.segment import Segment
 from rich.syntax import Syntax
 from rich.table import Table
+from rich.text import Text
 from rich.tree import Tree
 
 import requests
@@ -44,6 +49,7 @@ from madcatter.markdown import (
     process_math_blocks,
     strip_frontmatter,
 )
+from madcatter.unrender import embedded_source, mark_source, unrender
 
 
 if TYPE_CHECKING:
@@ -52,7 +58,9 @@ if TYPE_CHECKING:
 
 class _Flags(Protocol):
     path: list[str]
-    force_color: bool
+    color: bool
+    in_place: bool
+    unrender: bool
     ascii: bool
     code_theme: str
     inline_code_lexer: str | None
@@ -161,12 +169,58 @@ class LeftJustifiedHeading(Heading):
         yield from console.render(self.text, options=options.update(justify="left"))
 
 
+class PeriodListItem(ListItem):
+    """List item numbered ``1.`` like its source, with its paragraphs kept apart.
+
+    With the period and the blank line between paragraphs, rendering mdcat's
+    own output, or unrendering it, reads it as the same list again. Rich
+    prints an item's paragraphs back to back, which reads as one paragraph.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.paragraphs = 0
+
+    @override
+    def on_child_close(self, context: MarkdownContext, child: MarkdownElement) -> bool:
+        """Separate a paragraph from the paragraph before it with a blank line."""
+        if isinstance(child, Paragraph):
+            if self.paragraphs:
+                self.elements.append(Text())
+            self.paragraphs += 1
+        return super().on_child_close(context, child)
+
+    @override
+    def render_number(
+        self,
+        console: Console,
+        options: ConsoleOptions,
+        number: int,
+        last_number: int,
+    ) -> RenderResult:
+        """Render the item with a ``N.`` numeral, sized to the widest number."""
+        width = len(str(last_number)) + 3
+        lines = console.render_lines(
+            self.elements,
+            options.update(width=options.max_width - width),
+            style=self.style,
+        )
+        number_style = console.get_style("markdown.item.number", default="none")
+        numeral = Segment(f"{number}.".rjust(width - 1) + " ", number_style)
+        padding = Segment(" " * width, number_style)
+        for index, line in enumerate(lines):
+            yield padding if index else numeral
+            yield from line
+            yield Segment("\n")
+
+
 class Markdown(MarkdownBase):
-    """Markdown renderer with left-justified headings."""
+    """Markdown renderer with left-justified headings and ``N.`` numerals."""
 
     elements: ClassVar[dict[str, type[MarkdownElement]]] = {
         **MarkdownBase.elements,
         "heading_open": LeftJustifiedHeading,
+        "list_item_open": PeriodListItem,
     }
 
 
@@ -577,19 +631,26 @@ def set_terminal_title(title: str, tty: str = "/dev/tty") -> None:
     as ``less`` would otherwise swallow it. No-op without a terminal.
 
     Args:
-      title: Window title.
+      title: Window title; control characters are dropped, since one in a file
+        name would end the title early and run the rest as terminal commands.
+        Only the first 256 characters are kept.
       tty: Controlling-terminal device.
 
     """
+    safe = "".join(char for char in title if char.isprintable())[:256]
     try:
         with Path(tty).open("w", encoding="utf-8") as terminal:
-            terminal.write(f"\x1b]0;{title}\x07")
+            terminal.write(f"\x1b]0;{safe}\x07")
     except OSError:
         return
 
 
 def render_markdown_file(path: str, console: Console, flags: _Flags) -> str:
     """Read and render a markdown file, returning the body.
+
+    A file mdcat rendered in color carries its source, which is rendered
+    instead, so rendering mdcat's output reproduces it. Colored output carries
+    the source the same way, for ``unrender``.
 
     Args:
       path: File path or "-" for stdin.
@@ -600,11 +661,11 @@ def render_markdown_file(path: str, console: Console, flags: _Flags) -> str:
       markdown_body: Processed markdown string before rendering.
 
     """
-    if path == "-":
-        markdown_body = sys.stdin.read()
-    else:
-        with Path(path).open(encoding="utf-8") as markdown_file:
-            markdown_body = markdown_file.read()
+    raw = _read(path)
+    source = embedded_source(raw)
+    if source is None:
+        source = raw
+    markdown_body = source.replace("\r\n", "\n").replace("\r", "\n")
 
     # Strip YAML frontmatter if requested.
     if flags.no_frontmatter:
@@ -659,11 +720,12 @@ def render_markdown_file(path: str, console: Console, flags: _Flags) -> str:
         inline_code_lexer=flags.inline_code_lexer,
     )
 
+    marker = mark_source(source) if flags.color else ""
     if flags.page:
         fileio = io.StringIO()
         page_console = Console(
             file=fileio,
-            force_terminal=flags.force_color,
+            force_terminal=flags.color,
             width=flags.width,
         )
         page_console.print(markdown)
@@ -672,20 +734,20 @@ def render_markdown_file(path: str, console: Console, flags: _Flags) -> str:
             output = to_ascii(output)
         if not flags.pad:
             output = strip_trailing_whitespace(output)
-        pydoc.pager(output)
+        pydoc.pager(marker + output)
     else:
         # Capture output to strip trailing whitespace (unless --pad specified)
         fileio = io.StringIO()
         capture_console = Console(
             file=fileio,
-            force_terminal=flags.force_color,
+            force_terminal=flags.color,
             width=flags.pad or flags.width,
         )
         capture_console.print(markdown)
         output = fileio.getvalue()
         if not flags.pad:
             output = strip_trailing_whitespace(output)
-        console.file.write(output)
+        console.file.write(marker + output)
 
     return markdown_body
 
@@ -731,6 +793,35 @@ def _main() -> int:
         parser.error(
             "--follow cannot be combined with --toc/--links/--check-links/--code-only",
         )
+    # Each of these prints something other than the render, or skips it, so
+    # --in-place would write it over the file.
+    if clash := next(
+        (
+            name
+            for name, used in (
+                ("--page", flags.page),
+                ("--watch", flags.watch),
+                ("--follow", flags.follow),
+                ("--diff", flags.diff),
+                ("--section", flags.section),
+                ("--toc", flags.toc),
+                ("--links", flags.links),
+                ("--check-links", flags.check_links),
+                ("--code-only", flags.code_only),
+                ("--export-html", flags.export_html),
+                ("--export-ansi", flags.export_ansi),
+                ("--no-frontmatter", flags.unrender and flags.no_frontmatter),
+            )
+            if used and (flags.in_place or flags.unrender)
+        ),
+        "",
+    ):
+        parser.error(f"--in-place and --unrender cannot be combined with {clash}")
+    if flags.in_place and (not flags.path or "-" in flags.path):
+        parser.error("--in-place requires file paths, not stdin")
+    # A file's render must not depend on the terminal it was rendered in.
+    if flags.in_place:
+        flags.width = flags.width or 80
 
     # Apply style profile.
     if flags.style:
@@ -741,7 +832,7 @@ def _main() -> int:
     ascii_buffer = io.StringIO() if flags.ascii else None
     console = Console(
         file=ascii_buffer,
-        force_terminal=flags.force_color,
+        force_terminal=flags.color,
         width=flags.width,
         record=True,
     )
@@ -760,6 +851,10 @@ def _main() -> int:
 
     if names := [Path(path).name for path in flags.path if path != "-"]:
         set_terminal_title(" ".join(names))
+
+    if flags.unrender or flags.in_place:
+        _rewrite(flags)
+        return 0
 
     # Handle watch mode.
     if flags.watch:
@@ -802,6 +897,31 @@ def _main() -> int:
     if ascii_buffer is not None:
         print(to_ascii(ascii_buffer.getvalue()), end="")  # noqa: T201 -- ASCII mode is the command's final console output.
     return 0
+
+
+def _rewrite(flags: _Flags) -> None:
+    """Unrender or render each path, to stdout or back over the file."""
+    for path in flags.path:
+        if flags.unrender:
+            text = unrender(_read(path))
+        else:
+            buffer = io.StringIO()
+            render_markdown_file(path, Console(file=buffer), flags)
+            text = to_ascii(buffer.getvalue()) if flags.ascii else buffer.getvalue()
+        if flags.in_place:
+            Path(path).write_text(text, encoding="utf-8", newline="")
+        else:
+            sys.stdout.write(text)
+
+
+def _read(path: str) -> str:
+    """Read ``path`` as UTF-8 with its line endings kept, or stdin for ``-``."""
+    if path != "-":
+        with Path(path).open(encoding="utf-8", newline="") as file:
+            return file.read()
+    text = sys.stdin.read()
+    assert isinstance(text, str)
+    return text
 
 
 def _line_hash(line: str) -> bytes:
@@ -876,16 +996,16 @@ def _parse_args(
     color_group = parser.add_mutually_exclusive_group()
     color_group.add_argument(
         "-c",
-        "--force-color",
-        dest="force_color",
+        "--color",
+        dest="color",
         action="store_true",
         default=True,
         help="color output, even to non-terminals (default)",
     )
     color_group.add_argument(
-        "-C",
+        "--no-c",
         "--no-color",
-        dest="force_color",
+        dest="color",
         action="store_false",
         help="plain output, no ANSI codes",
     )
@@ -902,8 +1022,18 @@ def _parse_args(
     )
     parser.add_argument(
         "-i",
+        "--in-place",
+        action="store_true",
+        help="write the output back to each file instead of stdout",
+    )
+    parser.add_argument(
+        "--unrender",
+        action="store_true",
+        help="convert rendered mdcat output back to markdown",
+    )
+    parser.add_argument(
         "--inline-code-lexer",
-        help="inline_code_lexer",
+        help="pygments lexer for inline code",
     )
     parser.add_argument(
         "-y",
@@ -1028,5 +1158,5 @@ def _parse_args(
     parsed, remaining = parser.parse_known_args(argv)
     flags = cast(_Flags, parsed)
     if flags.ascii:
-        flags.force_color = False
+        flags.color = False
     return flags, remaining
