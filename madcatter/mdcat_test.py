@@ -27,6 +27,7 @@ from madcatter.mdcat import (
     set_terminal_title,
     to_ascii,
 )
+from madcatter.unrender import mark_source
 
 
 if TYPE_CHECKING:
@@ -248,7 +249,11 @@ def test_parse_args_defaults_and_options() -> None:
     assert flags.path == ["x.md"]
 
     cases = [
-        (["--force-color"], "force_color", True),
+        (["--color"], "color", True),
+        (["--no-c"], "color", False),
+        (["--no-color"], "color", False),
+        (["--in-place"], "in_place", True),
+        (["--unrender"], "unrender", True),
         (["--code-theme", "dracula"], "code_theme", "dracula"),
         (["--inline-code-lexer", "python"], "inline_code_lexer", "python"),
         (["--width", "80"], "width", 80),
@@ -753,10 +758,9 @@ class TestMadcatterTailAndCliB:
         flags, remaining = mdcat._parse_args(argparse.ArgumentParser(), [])
         assert remaining == []
         assert flags.path == []
-        assert flags.force_color is True
-        assert (
-            mdcat._parse_args(argparse.ArgumentParser(), ["-C"])[0].force_color is False
-        )
+        assert flags.color is True
+        assert (flags.in_place, flags.unrender) == (False, False)
+        assert mdcat._parse_args(argparse.ArgumentParser(), ["-i"])[0].in_place is True
         assert flags.ascii is False
         assert flags.code_theme == "monokai"
         assert flags.hyperlinks is True
@@ -780,12 +784,6 @@ class TestMadcatterTailAndCliB:
         )
         assert (
             mdcat._parse_args(argparse.ArgumentParser(), ["-t", "x"])[0].code_theme
-            == "x"
-        )
-        assert (
-            mdcat._parse_args(argparse.ArgumentParser(), ["-i", "x"])[
-                0
-            ].inline_code_lexer
             == "x"
         )
         assert mdcat._parse_args(argparse.ArgumentParser(), ["-w", "7"])[0].width == 7
@@ -1238,7 +1236,11 @@ class TestMadcatterRenderModesB:
         mdcat._parse_args(parser, [])
         help_text = parser.format_help()
         for option in (
-            "--force-color",
+            "--color",
+            "--no-c",
+            "--no-color",
+            "--in-place",
+            "--unrender",
             "--ascii",
             "--code-theme",
             "--inline-code-lexer",
@@ -1280,7 +1282,7 @@ class TestMadcatterRenderModesB:
             ],
         )
         assert remaining == []
-        assert (flags.force_color, flags.hyperlinks, flags.justify, flags.page) == (
+        assert (flags.color, flags.hyperlinks, flags.justify, flags.page) == (
             True,
             True,
             True,
@@ -1625,7 +1627,7 @@ class TestMadcatterRenderModesB:
         monkeypatch.setattr(mdcat, "Console", FakeConsole)
         flags, _ = mdcat._parse_args(
             argparse.ArgumentParser(),
-            ["--justify", "--width", "70", "--force-color"],
+            ["--justify", "--width", "70", "--color"],
         )
         output = StringIO()
         outer_console = Console(file=output, force_terminal=True)
@@ -1638,7 +1640,7 @@ class TestMadcatterRenderModesB:
             "inline_code_lexer": None,
         }
         assert constructed[1] == {"force_terminal": True, "width": 70}
-        assert output.getvalue() == "rendered"
+        assert output.getvalue() == mark_source("body") + "rendered"
 
     def test_render_check_links_and_code_only_paths(
         self,
@@ -1920,7 +1922,7 @@ class TestOwnedMainAndRenderExact:
                 "inline_code_lexer": None,
             },
         ]
-        assert output.getvalue() == "body\n\n"
+        assert output.getvalue() == mark_source("body  \n") + "body\n\n"
 
 
 class TestOwnedMutationExactB:
@@ -2106,7 +2108,7 @@ class TestOwnedMutationExactB:
         monkeypatch.setattr(pydoc, "pager", paged.append)
         flags, _ = mdcat._parse_args(
             argparse.ArgumentParser(),
-            ["--page", "--force-color", "--width", "70"],
+            ["--page", "--color", "--width", "70"],
         )
         mdcat.render_markdown_file(str(path), Console(file=StringIO()), flags)
         assert page_calls[-1]["force_terminal"] is True
@@ -2145,7 +2147,7 @@ class TestOwnedMutationExactB:
         monkeypatch.setattr(mdcat, "Console", make_console)
         flags, _ = mdcat._parse_args(
             argparse.ArgumentParser(),
-            ["--force-color", "--width", "70"],
+            ["--color", "--width", "70"],
         )
         mdcat.render_markdown_file(str(path), Console(file=StringIO()), flags)
         assert calls[-1]["force_terminal"] is True
@@ -2180,7 +2182,7 @@ class TestOwnedMutationExactC:
         monkeypatch.setattr(sys, "stdin", StringIO("z"))
         assert mdcat._main() == 0
         assert titles == ["a.md b.md"]
-        assert "\x1b]" not in capsys.readouterr().out
+        assert "\x1b]0;" not in capsys.readouterr().out
 
     def test_main_leaves_title_alone_for_stdin(
         self,
@@ -2191,6 +2193,147 @@ class TestOwnedMutationExactC:
         monkeypatch.setattr(sys, "argv", ["mdcat", "-"])
         assert mdcat._main() == 0
         assert titles == []
+
+    def test_main_in_place_round_trips_through_unrender(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        source = (
+            "# T\n\n- **a**\n\n1. one\n2. two\n\n| x | y |\n|---|--:|\n| 1 | 22 |\n"
+        )
+        doc = tmp_path / "doc.md"
+        doc.write_text(source)
+        monkeypatch.setattr(sys, "argv", ["mdcat", "-i", "-w", "30", str(doc)])
+        assert mdcat._main() == 0
+        assert "\x1b[" in doc.read_text()
+        monkeypatch.setattr(sys, "argv", ["mdcat", "-i", "--unrender", str(doc)])
+        assert mdcat._main() == 0
+        assert doc.read_text() == source
+
+    def test_main_in_place_honors_no_color_and_ascii(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        doc = tmp_path / "doc.md"
+        for flag, expected in (("--no-c", "\n • a\n"), ("--ascii", "\n * a\n")):
+            doc.write_text("- a\n")
+            monkeypatch.setattr(sys, "argv", ["mdcat", "-i", flag, str(doc)])
+            assert mdcat._main() == 0
+            assert doc.read_text() == expected
+
+    def test_main_unrender_writes_stdout_for_stdin(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        monkeypatch.setattr(sys, "stdin", StringIO("\x1b[1;4mT\x1b[0m\n\n • a\n"))
+        monkeypatch.setattr(sys, "argv", ["mdcat", "--unrender"])
+        assert mdcat._main() == 0
+        assert capsys.readouterr().out == "# T\n\n- a\n"
+
+    @pytest.mark.parametrize(
+        ("args", "message"),
+        [
+            (["-i", "--page", "x"], "--in-place and --unrender cannot be combined"),
+            (["--unrender", "--watch", "x"], "--in-place and --unrender cannot be"),
+            (["-i", "--follow", "x"], "--in-place and --unrender cannot be combined"),
+            (["-i", "--diff", "y", "x"], "--in-place and --unrender cannot be"),
+            (["-i"], "--in-place requires file paths, not stdin"),
+            (["-i", "-"], "--in-place requires file paths, not stdin"),
+            (["--unrender", "--section", "s"], "--in-place and --unrender cannot be"),
+            (["--unrender", "--toc"], "--in-place and --unrender cannot be combined"),
+            (["--unrender", "--export-html", "h"], "--in-place and --unrender cannot"),
+            (["--unrender", "--no-frontmatter"], "--unrender cannot be combined"),
+        ],
+    )
+    def test_main_rejects_in_place_and_unrender_misuse(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        args: list[str],
+        message: str,
+    ) -> None:
+        monkeypatch.setattr(sys, "argv", ["mdcat", *args])
+        with pytest.raises(SystemExit):
+            mdcat._main()
+        assert message in capsys.readouterr().err
+
+    @pytest.mark.parametrize(
+        "mode",
+        [
+            ["--section", "Missing"],
+            ["--toc"],
+            ["--links"],
+            ["--check-links"],
+            ["--code-only"],
+            ["--code-lang", "py"],
+            ["--export-html", "out.html"],
+            ["--export-ansi", "out.ansi"],
+        ],
+    )
+    def test_main_in_place_rejects_modes_and_keeps_the_file(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        mode: list[str],
+    ) -> None:
+        doc = tmp_path / "doc.md"
+        doc.write_text("# Doc\n\nkeep me\n")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(sys, "argv", ["mdcat", "-i", *mode, str(doc)])
+        with pytest.raises(SystemExit) as exc:
+            mdcat._main()
+        assert exc.value.code == 2
+        assert doc.read_text() == "# Doc\n\nkeep me\n"
+        assert sorted(path.name for path in tmp_path.iterdir()) == ["doc.md"]
+
+    def test_main_in_place_ignores_terminal_width_and_is_idempotent(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        written: list[str] = []
+        for columns in ("40", "120"):
+            monkeypatch.setenv("COLUMNS", columns)
+            doc = tmp_path / f"{columns}.md"
+            doc.write_text("word " * 30 + "\n")
+            monkeypatch.setattr(sys, "argv", ["mdcat", "-i", str(doc)])
+            assert mdcat._main() == 0
+            written.append(doc.read_text())
+        assert written[0] == written[1]
+        assert mdcat._main() == 0
+        assert (tmp_path / "120.md").read_text() == written[1]
+
+    def test_render_of_rendered_output_matches_the_first_render(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        source = tmp_path / "doc.md"
+        source.write_text("# T\n\n1. one\n\n> q\n")
+        flags, _ = mdcat._parse_args(argparse.ArgumentParser(), ["-w", "40"])
+        first = StringIO()
+        mdcat.render_markdown_file(str(source), Console(file=first), flags)
+        rendered = tmp_path / "doc.ansi"
+        rendered.write_text(first.getvalue())
+        second = StringIO()
+        mdcat.render_markdown_file(str(rendered), Console(file=second), flags)
+        assert second.getvalue() == first.getvalue()
+
+    def test_set_terminal_title_strips_control_codes_and_caps_length(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        tty = tmp_path / "tty"
+        set_terminal_title("a\x07\x1b[2J" + "x" * 500, str(tty))
+        written = tty.read_text()
+        assert written.startswith("\x1b]0;a[2Jxxx")
+        assert written.endswith("\x07")
+        body = written[len("\x1b]0;") : -1]
+        assert "\x1b" not in body
+        assert "\x07" not in body
+        assert len(body) == 256
 
     def test_set_terminal_title_writes_osc_to_tty(self, tmp_path: Path) -> None:
         tty = tmp_path / "tty"
@@ -2238,7 +2381,7 @@ class TestOwnedMutationExactC:
         monkeypatch.setattr(
             sys,
             "argv",
-            ["mdcat", "--force-color", "--width", "77", str(path)],
+            ["mdcat", "--color", "--width", "77", str(path)],
         )
         assert mdcat._main() == 0
         assert calls == [

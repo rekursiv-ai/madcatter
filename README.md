@@ -41,7 +41,8 @@ mdcat -                          # render stdin
 echo '# hi :wave:' | mdcat -     # emoji shortcodes are expanded
 echo '$e^{i\pi}+1=0$' | mdcat    # best effort LaTeX: eⁱ⁽π⁾+1=0
 mdcat --toc README.md            # render just the table of contents
-mdcat -c foo.md | less -R        # ANSI colored pipes.
+mdcat foo.md | less -R           # color is on, even through pipes
+mdcat --no-color foo.md          # plain text (also --no-c)
 ```
 
 ## Description
@@ -69,6 +70,7 @@ a table.
 - `--watch` (re-render on change) and `--follow`/`-f`/`-F` (`tail -F` semantics: emit only new
   lines, survive atomic rewrites).
 - ASCII-only, HTML, and ANSI export.
+- In-place rendering (`-i`) and `--unrender`, which reads rendered output back into markdown.
 - YAML frontmatter stripping.
 
 ## Usage cookbook
@@ -142,6 +144,17 @@ transliterated)
 
 ```bash
 mdcat --ascii README.md
+```
+
+**Render in place, and back** -- `-i` writes the colored render over the file,
+at 80 columns unless `-w` is given; `--unrender` turns it back into the exact
+markdown. Colored output carries its source in invisible escape codes; plain
+(`--no-color`) output keeps only what it shows.
+
+```bash
+mdcat -i notes.md                # notes.md now holds the render
+mdcat -i --unrender notes.md     # notes.md is markdown again
+mdcat notes.md | mdcat --unrender -
 ```
 
 **Strip YAML frontmatter** before rendering — useful for notes that start with a `---` metadata

@@ -5,7 +5,26 @@ All notable madcatter changes are documented here. This project follows
 
 ## Unreleased
 
+### Added
+
+- `mdcat -i` (`--in-place`) writes the render over each file, at 80 columns
+  unless `-w` is given.
+- `mdcat --unrender` turns mdcat output back into markdown. Colored output
+  carries its source in invisible OSC 8 codes, so it comes back byte for
+  byte; plain output is read back from what it shows.
+- `mdcat` sets the terminal title to the file names.
+
+### Changed
+
+- Color is on by default, even through pipes. `-c`/`--color` is kept;
+  `--no-c`/`--no-color` turns it off.
+- `-i` now means `--in-place`. Spell the inline lexer `--inline-code-lexer`;
+  `mdcat -i python foo.md` now renders `python` and `foo.md` in place.
+- Ordered lists render as `1.`, and a list item's paragraphs stay separated.
+
 ### Removed
+
+- `-C` and `--force-color`; use `--no-color` and `--color`.
 
 - `madcatter.lib.worker_count` is no longer part of the package. It moved, with
   the pre-commit gates that use it, to `tools/gate/` at the repository root,
