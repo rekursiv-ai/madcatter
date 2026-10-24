@@ -40,6 +40,7 @@ from madcatter.emoji import resolve
 from madcatter.markdown import (
     inside_fence,
     is_fence_delimiter,
+    normalize_bullets,
     process_math_blocks,
     strip_frontmatter,
 )
@@ -51,7 +52,7 @@ if TYPE_CHECKING:
 
 class _Flags(Protocol):
     path: list[str]
-    force_color: bool | None
+    force_color: bool
     ascii: bool
     code_theme: str
     inline_code_lexer: str | None
@@ -610,7 +611,7 @@ def render_markdown_file(path: str, console: Console, flags: _Flags) -> str:
         markdown_body = "\n".join(strip_frontmatter(markdown_body.splitlines()))
 
     # Process emoji shortcodes and math blocks.
-    markdown_body = process_emoji(markdown_body)
+    markdown_body = normalize_bullets(process_emoji(markdown_body))
     markdown_body = process_math_blocks(markdown_body, enable_math=flags.math)
 
     # Apply section filter if specified.
@@ -662,7 +663,7 @@ def render_markdown_file(path: str, console: Console, flags: _Flags) -> str:
         fileio = io.StringIO()
         page_console = Console(
             file=fileio,
-            force_terminal=False if flags.ascii else flags.force_color,
+            force_terminal=flags.force_color,
             width=flags.width,
         )
         page_console.print(markdown)
@@ -677,7 +678,7 @@ def render_markdown_file(path: str, console: Console, flags: _Flags) -> str:
         fileio = io.StringIO()
         capture_console = Console(
             file=fileio,
-            force_terminal=console.is_terminal or flags.force_color,
+            force_terminal=flags.force_color,
             width=flags.pad or flags.width,
         )
         capture_console.print(markdown)
@@ -740,7 +741,7 @@ def _main() -> int:
     ascii_buffer = io.StringIO() if flags.ascii else None
     console = Console(
         file=ascii_buffer,
-        force_terminal=False if flags.ascii else flags.force_color,
+        force_terminal=flags.force_color,
         width=flags.width,
         record=True,
     )
@@ -823,7 +824,7 @@ def _find_anchor_index(
 
 def _render_line(console: Console, flags: _Flags, line: str) -> None:
     """Print one markdown line with the CLI's rendering options."""
-    body = process_emoji(line)
+    body = normalize_bullets(process_emoji(line))
     body = process_math_blocks(body, enable_math=flags.math)
     console.print(
         Markdown(
@@ -876,9 +877,17 @@ def _parse_args(
     color_group.add_argument(
         "-c",
         "--force-color",
+        dest="force_color",
         action="store_true",
-        default=None,
-        help="force color for non-terminals",
+        default=True,
+        help="color output, even to non-terminals (default)",
+    )
+    color_group.add_argument(
+        "-C",
+        "--no-color",
+        dest="force_color",
+        action="store_false",
+        help="plain output, no ANSI codes",
     )
     color_group.add_argument(
         "--ascii",
@@ -1017,4 +1026,7 @@ def _parse_args(
         help="disable math rendering (default: enabled)",
     )
     parsed, remaining = parser.parse_known_args(argv)
-    return cast(_Flags, parsed), remaining
+    flags = cast(_Flags, parsed)
+    if flags.ascii:
+        flags.force_color = False
+    return flags, remaining

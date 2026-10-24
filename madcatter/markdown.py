@@ -50,6 +50,26 @@ def inside_fence(lines: list[str]) -> list[bool]:
     return inside
 
 
+def normalize_bullets(text: str) -> str:
+    """Read a leading ``•`` as a ``-`` list marker, outside code fences.
+
+    mdcat renders list markers as ``•``, so this makes rendering its own
+    output a fixed point.
+
+    Args:
+      text: Markdown source.
+
+    Returns:
+      normalized: ``text`` with each line-leading ``• `` rewritten to ``- ``.
+
+    """
+    lines = text.split("\n")
+    return "\n".join(
+        line if fenced else re.sub(r"^(\s*)•(?=\s)", r"\1-", line)
+        for line, fenced in zip(lines, inside_fence(lines), strict=True)
+    )
+
+
 def process_math_blocks(markdown_body: str, enable_math: bool = True) -> str:
     """Convert LaTeX math in markdown to Unicode, leaving code blocks intact.
 

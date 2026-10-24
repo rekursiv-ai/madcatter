@@ -10,6 +10,7 @@ from madcatter import markdown
 from madcatter.markdown import (
     inside_fence,
     is_fence_delimiter,
+    normalize_bullets,
     process_math_blocks,
     strip_frontmatter,
 )
@@ -142,6 +143,11 @@ def test_inside_fence_reports_the_state_each_line_starts_in():
     lines = ["a", "```", "b", "```x```", "~~~", "c", "```"]
     assert inside_fence(lines) == [False, False, True, True, True, False, False]
     assert inside_fence([]) == []
+
+
+def test_normalize_bullets_reads_rendered_bullets_as_list_markers():
+    text = " • a\n    • b\n•c\na • b\n```\n• d\n```"
+    assert normalize_bullets(text) == " - a\n    - b\n•c\na • b\n```\n• d\n```"
 
 
 def test_process_math_blocks_default_enables_conversion():

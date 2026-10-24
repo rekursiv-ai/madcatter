@@ -753,7 +753,10 @@ class TestMadcatterTailAndCliB:
         flags, remaining = mdcat._parse_args(argparse.ArgumentParser(), [])
         assert remaining == []
         assert flags.path == []
-        assert flags.force_color is None
+        assert flags.force_color is True
+        assert (
+            mdcat._parse_args(argparse.ArgumentParser(), ["-C"])[0].force_color is False
+        )
         assert flags.ascii is False
         assert flags.code_theme == "monokai"
         assert flags.hyperlinks is True
