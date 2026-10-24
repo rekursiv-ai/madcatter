@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import cast
 from unittest.mock import Mock
 
 import re
@@ -12,15 +12,13 @@ from pylatexenc.latex2text import LatexNodes2Text
 from pylatexenc.latexwalker import LatexCharsNode, LatexGroupNode, LatexMacroNode
 from pylatexenc.macrospec._argparsers import ParsedMacroArgs
 
+import pytest
+
 from madcatter import latex
 from madcatter.latex import (
     _try_convert_fraction,
     latex2unicode,
 )
-
-
-if TYPE_CHECKING:
-    import pytest
 
 
 def test_latex2unicode_basic_symbols():
@@ -405,6 +403,15 @@ def test_latex2unicode_frac_with_none_in_argnlist():
 
     result2 = _try_convert_fraction(mock_node2)
     assert result2 == ""
+
+
+@pytest.mark.parametrize("argnlist", [None, [], [LatexGroupNode(nodelist=[])]])
+def test_try_convert_fraction_rejects_missing_or_short_argnlist(
+    argnlist: list[LatexGroupNode | None] | None,
+) -> None:
+    node = cast(LatexMacroNode, Mock())
+    node.nodeargd = ParsedMacroArgs(argnlist=argnlist)
+    assert _try_convert_fraction(node) == ""
 
 
 def test_latex2unicode_macro_followed_by_environment():
