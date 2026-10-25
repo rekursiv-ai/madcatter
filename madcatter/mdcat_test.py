@@ -27,7 +27,6 @@ from madcatter.mdcat import (
     set_terminal_title,
     to_ascii,
 )
-from madcatter.unrender import mark_source
 
 
 if TYPE_CHECKING:
@@ -1640,7 +1639,7 @@ class TestMadcatterRenderModesB:
             "inline_code_lexer": None,
         }
         assert constructed[1] == {"force_terminal": True, "width": 70}
-        assert output.getvalue() == mark_source("body") + "rendered"
+        assert output.getvalue() == "rendered"
 
     def test_render_check_links_and_code_only_paths(
         self,
@@ -1922,7 +1921,7 @@ class TestOwnedMainAndRenderExact:
                 "inline_code_lexer": None,
             },
         ]
-        assert output.getvalue() == mark_source("body  \n") + "body\n\n"
+        assert output.getvalue() == "body\n\n"
 
 
 class TestOwnedMutationExactB:
@@ -2211,17 +2210,145 @@ class TestOwnedMutationExactC:
         assert mdcat._main() == 0
         assert doc.read_text() == source
 
-    def test_main_in_place_honors_no_color_and_ascii(
+    @pytest.mark.parametrize(
+        ("flag", "named"),
+        [
+            ("--no-c", "--no-color"),
+            ("--no-color", "--no-color"),
+            ("--ascii", "--ascii"),
+        ],
+    )
+    def test_main_in_place_refuses_plain_output_it_could_not_restore(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        flag: str,
+        named: str,
+    ) -> None:
+        doc = tmp_path / "doc.md"
+        doc.write_text("- a\n")
+        monkeypatch.setattr(sys, "argv", ["mdcat", "-i", flag, str(doc)])
+        with pytest.raises(SystemExit) as exc:
+            mdcat._main()
+        assert exc.value.code == 2
+        assert (
+            f"--in-place cannot be combined with {named}\n" in capsys.readouterr().err
+        )
+        assert doc.read_text() == "- a\n"
+
+    def test_main_unrender_ignores_color_flags(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         doc = tmp_path / "doc.md"
-        for flag, expected in (("--no-c", "\n • a\n"), ("--ascii", "\n * a\n")):
-            doc.write_text("- a\n")
-            monkeypatch.setattr(sys, "argv", ["mdcat", "-i", flag, str(doc)])
-            assert mdcat._main() == 0
-            assert doc.read_text() == expected
+        doc.write_text("# T\n")
+        monkeypatch.setattr(sys, "argv", ["mdcat", "-i", str(doc)])
+        assert mdcat._main() == 0
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["mdcat", "-i", "--unrender", "--ascii", str(doc)],
+        )
+        assert mdcat._main() == 0
+        assert doc.read_text() == "# T\n"
+
+    def test_main_in_place_leaves_every_file_alone_when_one_is_unreadable(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        doc = tmp_path / "doc.md"
+        doc.write_text("# T\n")
+        missing = tmp_path / "missing.md"
+        monkeypatch.setattr(sys, "argv", ["mdcat", "-i", str(doc), str(missing)])
+        with pytest.raises(SystemExit) as exc:
+            mdcat._main()
+        assert exc.value.code == 1
+        assert capsys.readouterr().err.startswith(f"mdcat: {missing}: ")
+        assert doc.read_text() == "# T\n"
+
+    @pytest.mark.parametrize("args", [[], ["--page"]])
+    def test_main_display_output_carries_no_hidden_source(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        args: list[str],
+    ) -> None:
+        doc = tmp_path / "doc.md"
+        doc.write_text("# T\n")
+        paged: list[str] = []
+        monkeypatch.setattr(pydoc, "pager", paged.append)
+        monkeypatch.setattr(sys, "argv", ["mdcat", *args, str(doc)])
+        assert mdcat._main() == 0
+        output = "".join(paged) + capsys.readouterr().out
+        assert "\x1b[" in output
+        assert "\x1b]8;" not in output
+
+    def test_main_export_ansi_writes_the_colored_render(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        doc = tmp_path / "doc.md"
+        doc.write_text("# Title\n")
+        ansi = tmp_path / "doc.ansi"
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["mdcat", "--export-ansi", str(ansi), str(doc)],
+        )
+        assert mdcat._main() == 0
+        exported = ansi.read_text()
+        assert "\x1b[" in exported
+        assert "Title" in exported
+        assert capsys.readouterr().out.startswith(exported)
+
+    def test_render_diff_compares_the_markdown_of_rendered_files(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        source = tmp_path / "source.md"
+        source.write_text("# T\n\n- a\n")
+        flags, _ = mdcat._parse_args(argparse.ArgumentParser(), ["-i", "-w", "80"])
+        rendered = tmp_path / "rendered.md"
+        rendered.write_text(mdcat.rewritten(str(source), flags))
+        console = Console(file=StringIO(), force_terminal=False, record=True)
+        mdcat.render_diff(str(rendered), str(source), console)
+        assert console.export_text() == ""
+
+    def test_follow_reads_the_markdown_of_a_rendered_file(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        source = tmp_path / "doc.md"
+        source.write_text("# T\n\n- a\n")
+        flags, _ = mdcat._parse_args(argparse.ArgumentParser(), ["-i", "-w", "80"])
+        data = mdcat.rewritten(str(source), flags).encode()
+        rendered: list[str] = []
+
+        def read(path: str) -> bytes:
+            del path
+            return data
+
+        def render_line(console: Console, flags: object, line: str) -> None:
+            del console, flags
+            rendered.append(line)
+
+        def stop(delay: float) -> None:
+            del delay
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(mdcat, "_read_or_none", read)
+        monkeypatch.setattr(mdcat, "_render_line", render_line)
+        monkeypatch.setattr(time, "sleep", stop)
+        mdcat.follow_file("x", Console(file=StringIO()), flags)
+        assert rendered == ["# T", "- a"]
 
     def test_main_unrender_writes_stdout_for_stdin(
         self,
@@ -2385,7 +2512,7 @@ class TestOwnedMutationExactC:
         )
         assert mdcat._main() == 0
         assert calls == [
-            {"file": None, "force_terminal": True, "width": 77, "record": True},
+            {"file": None, "force_terminal": True, "width": 77, "record": False},
         ]
 
     def test_invalid_mode_messages_have_no_padding(
@@ -2493,9 +2620,10 @@ class TestOwnedMutationExactD:
                 "file": seen[0]["file"],
                 "force_terminal": False,
                 "width": None,
-                "record": True,
+                "record": False,
             },
         ]
+        assert isinstance(seen[0]["file"], StringIO)
 
     def test_diff_invalid_message_has_no_mutant_padding(
         self,
@@ -2642,9 +2770,9 @@ class TestOwnedMutationExactF:
         path.write_text("body")
         ansi = tmp_path / "doc.ansi"
 
-        def make_console(**kwargs: object) -> Console:
+        def make_console(*, file: StringIO | None = None, **kwargs: object) -> Console:
             del kwargs
-            return Console(file=StringIO(), record=True)
+            return Console(file=file or StringIO())
 
         def render(path_name: str, console: Console, flags: object) -> str:
             del path_name, flags

@@ -148,13 +148,14 @@ mdcat --ascii README.md
 
 **Render in place, and back** -- `-i` writes the colored render over the file,
 at 80 columns unless `-w` is given; `--unrender` turns it back into the exact
-markdown. Colored output carries its source in invisible escape codes; plain
-(`--no-color`) output keeps only what it shows.
+markdown. The file carries its source in invisible escape codes. If the shown
+text was edited since, or for other mdcat output, `--unrender` reads the
+markdown back from what is shown, which keeps only what the render shows.
 
 ```bash
 mdcat -i notes.md                # notes.md now holds the render
 mdcat -i --unrender notes.md     # notes.md is markdown again
-mdcat notes.md | mdcat --unrender -
+mdcat notes.md | mdcat --unrender -   # markdown read back from the render
 ```
 
 **Strip YAML frontmatter** before rendering — useful for notes that start with a `---` metadata
