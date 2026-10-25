@@ -49,7 +49,7 @@ from madcatter.markdown import (
     process_math_blocks,
     strip_frontmatter,
 )
-from madcatter.unrender import embedded_source, mark_source, unrender
+from madcatter.unrender import Layout, mark_source, unrender
 
 
 if TYPE_CHECKING:
@@ -472,8 +472,8 @@ def render_diff(file1: str, file2: str, console: Console) -> None:
       console: Rich Console to write colored diff to.
 
     """
-    lines1 = Path(file1).read_text().splitlines(keepends=True)
-    lines2 = Path(file2).read_text().splitlines(keepends=True)
+    lines1 = unrender(_read(file1), render=render_plain).splitlines(keepends=True)
+    lines2 = unrender(_read(file2), render=render_plain).splitlines(keepends=True)
     diff = difflib.unified_diff(lines1, lines2, fromfile=file1, tofile=file2)
 
     for diff_line in diff:
@@ -529,7 +529,8 @@ def follow_file(
                 continue
             last_data = data
 
-            lines = data.decode(errors="replace").splitlines()
+            text = unrender(data.decode(errors="replace"), render=render_plain)
+            lines = text.splitlines()
             if flags.no_frontmatter:
                 lines = strip_frontmatter(lines)
 
@@ -645,12 +646,32 @@ def set_terminal_title(title: str, tty: str = "/dev/tty") -> None:
         return
 
 
+def render_plain(source: str, layout: Layout) -> str:
+    """Render markdown as uncolored text, as ``mdcat`` would under ``layout``.
+
+    Args:
+      source: Markdown source, exactly as read.
+      layout: Width, justification, math and frontmatter settings to render with.
+
+    Returns:
+      text: The render, without escape codes.
+
+    """
+    buffer = io.StringIO()
+    Console(file=buffer, force_terminal=False, width=layout.width).print(
+        Markdown(
+            _prepare(source, frontmatter=layout.frontmatter, math=layout.math),
+            justify="full" if layout.justify else "left",
+        ),
+    )
+    return buffer.getvalue()
+
+
 def render_markdown_file(path: str, console: Console, flags: _Flags) -> str:
     """Read and render a markdown file, returning the body.
 
-    A file mdcat rendered in color carries its source, which is rendered
-    instead, so rendering mdcat's output reproduces it. Colored output carries
-    the source the same way, for ``unrender``.
+    A file mdcat rendered is read back to its markdown first, so rendering
+    mdcat's output reproduces it.
 
     Args:
       path: File path or "-" for stdin.
@@ -661,19 +682,11 @@ def render_markdown_file(path: str, console: Console, flags: _Flags) -> str:
       markdown_body: Processed markdown string before rendering.
 
     """
-    raw = _read(path)
-    source = embedded_source(raw)
-    if source is None:
-        source = raw
-    markdown_body = source.replace("\r\n", "\n").replace("\r", "\n")
-
-    # Strip YAML frontmatter if requested.
-    if flags.no_frontmatter:
-        markdown_body = "\n".join(strip_frontmatter(markdown_body.splitlines()))
-
-    # Process emoji shortcodes and math blocks.
-    markdown_body = normalize_bullets(process_emoji(markdown_body))
-    markdown_body = process_math_blocks(markdown_body, enable_math=flags.math)
+    markdown_body = _prepare(
+        unrender(_read(path), render=render_plain),
+        frontmatter=not flags.no_frontmatter,
+        math=flags.math,
+    )
 
     # Apply section filter if specified.
     if flags.section:
@@ -720,7 +733,6 @@ def render_markdown_file(path: str, console: Console, flags: _Flags) -> str:
         inline_code_lexer=flags.inline_code_lexer,
     )
 
-    marker = mark_source(source) if flags.color else ""
     if flags.page:
         fileio = io.StringIO()
         page_console = Console(
@@ -734,7 +746,7 @@ def render_markdown_file(path: str, console: Console, flags: _Flags) -> str:
             output = to_ascii(output)
         if not flags.pad:
             output = strip_trailing_whitespace(output)
-        pydoc.pager(marker + output)
+        pydoc.pager(output)
     else:
         # Capture output to strip trailing whitespace (unless --pad specified)
         fileio = io.StringIO()
@@ -747,9 +759,38 @@ def render_markdown_file(path: str, console: Console, flags: _Flags) -> str:
         output = fileio.getvalue()
         if not flags.pad:
             output = strip_trailing_whitespace(output)
-        console.file.write(marker + output)
+        console.file.write(output)
 
     return markdown_body
+
+
+def rewritten(path: str, flags: _Flags) -> str:
+    """Return what ``--in-place`` or ``--unrender`` writes for ``path``.
+
+    Args:
+      path: Markdown file, or a file mdcat rendered.
+      flags: Parsed flags; ``unrender`` and the layout flags apply.
+
+    Returns:
+      text: The markdown for ``--unrender``; otherwise the colored render,
+        after invisible codes that carry the markdown and the layout it was
+        rendered with, so ``unrender`` can restore it exactly.
+
+    """
+    source = unrender(_read(path), render=render_plain)
+    if flags.unrender:
+        return source
+    buffer = io.StringIO()
+    render_markdown_file(path, Console(file=buffer), flags)
+    width = flags.pad or flags.width
+    assert isinstance(width, int)
+    layout = Layout(
+        width=width,
+        justify=flags.justify,
+        math=flags.math,
+        frontmatter=not flags.no_frontmatter,
+    )
+    return mark_source(source, layout=layout) + buffer.getvalue()
 
 
 def main() -> int:
@@ -819,6 +860,10 @@ def _main() -> int:
         parser.error(f"--in-place and --unrender cannot be combined with {clash}")
     if flags.in_place and (not flags.path or "-" in flags.path):
         parser.error("--in-place requires file paths, not stdin")
+    # Plain output carries no source, so --unrender could not restore the file.
+    if flags.in_place and not flags.unrender and not flags.color:
+        plain = "--ascii" if flags.ascii else "--no-color"
+        parser.error(f"--in-place cannot be combined with {plain}")
     # A file's render must not depend on the terminal it was rendered in.
     if flags.in_place:
         flags.width = flags.width or 80
@@ -828,14 +873,10 @@ def _main() -> int:
         profile = STYLE_PROFILES[flags.style]
         flags.code_theme = profile["code_theme"]
 
-    # Create console - capture to StringIO for --ascii mode.
-    ascii_buffer = io.StringIO() if flags.ascii else None
-    console = Console(
-        file=ascii_buffer,
-        force_terminal=flags.color,
-        width=flags.width,
-        record=True,
-    )
+    # Capture what --ascii converts and --export-ansi saves. The render is
+    # written to the console's file, which Rich's record=True never sees.
+    buffer = io.StringIO() if flags.ascii or flags.export_ansi else None
+    console = Console(file=buffer, force_terminal=flags.color, width=flags.width)
 
     # Handle diff mode.
     if flags.diff:
@@ -889,25 +930,29 @@ def _main() -> int:
         console.print(f"[green]Exported HTML to {flags.export_html}[/green]")
 
     if flags.export_ansi:
+        assert isinstance(buffer, io.StringIO)
         with Path(flags.export_ansi).open("w", encoding="utf-8") as f:
-            f.write(console.export_text())
+            f.write(buffer.getvalue())
         console.print(f"[green]Exported ANSI to {flags.export_ansi}[/green]")
 
-    # Output ASCII-converted text.
-    if ascii_buffer is not None:
-        print(to_ascii(ascii_buffer.getvalue()), end="")  # noqa: T201 -- ASCII mode is the command's final console output.
+    if buffer is not None:
+        text = buffer.getvalue()
+        print(to_ascii(text) if flags.ascii else text, end="")  # noqa: T201 -- the captured output is the command's final console output.
     return 0
 
 
+# Every file is read before any is written, so an unreadable one leaves all of them as
+# they were.
 def _rewrite(flags: _Flags) -> None:
     """Unrender or render each path, to stdout or back over the file."""
+    texts: list[str] = []
     for path in flags.path:
-        if flags.unrender:
-            text = unrender(_read(path))
-        else:
-            buffer = io.StringIO()
-            render_markdown_file(path, Console(file=buffer), flags)
-            text = to_ascii(buffer.getvalue()) if flags.ascii else buffer.getvalue()
+        try:
+            texts.append(rewritten(path, flags))
+        except (OSError, UnicodeDecodeError) as error:
+            sys.stderr.write(f"mdcat: {path}: {error}\n")
+            sys.exit(1)
+    for path, text in zip(flags.path, texts, strict=True):
         if flags.in_place:
             Path(path).write_text(text, encoding="utf-8", newline="")
         else:
@@ -1160,3 +1205,12 @@ def _parse_args(
     if flags.ascii:
         flags.color = False
     return flags, remaining
+
+
+def _prepare(source: str, *, frontmatter: bool, math: bool) -> str:
+    """Turn markdown source into the body mdcat renders."""
+    body = source.replace("\r\n", "\n").replace("\r", "\n")
+    if not frontmatter:
+        body = "\n".join(strip_frontmatter(body.splitlines()))
+    body = normalize_bullets(process_emoji(body))
+    return process_math_blocks(body, enable_math=math)

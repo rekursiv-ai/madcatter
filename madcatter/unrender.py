@@ -1,14 +1,17 @@
 """Convert mdcat's rendered output back into markdown.
 
-Colored output carries its markdown source in invisible escape codes, so
-``unrender`` returns that source byte for byte. Output without them, such as
-plain text, is read back from what it shows: list markers, quotes and rules,
-and, in ANSI output, heading levels, inline styles, links and tables. That
-reading loses whatever the render dropped. Markdown source passes through
-unchanged.
+A file ``mdcat -i`` rendered carries its markdown source, and the layout it was
+rendered with, in invisible escape codes. ``unrender`` returns that source byte
+for byte when rendering it again shows exactly the text the file shows; after
+an edit, or without the codes, it reads the markdown back from what is shown:
+heading levels, inline styles, links, lists, quotes, rules, code blocks and
+tables. That reading loses whatever the render dropped. Text without escape
+codes, such as markdown source, passes through unchanged.
 """
 
 from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 import base64
 import dataclasses
@@ -18,10 +21,20 @@ import re
 from madcatter.markdown import is_fence_delimiter
 
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+
 _ESCAPE = re.compile(
     r"\x1b\[(?P<sgr>[0-9;]*)(?P<final>[@-~])"
     r"|\x1b\]8;[^;]*;(?P<link>[^\x07\x1b]*)(?:\x07|\x1b\\)"
-    r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)",
+    r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"
+    # A code cut off by truncation would otherwise show as text.
+    r"|\x1b\][^\x07\x1b]*\x1b?$",
+)
+_MARK = re.compile(
+    r"\x1b\]8;id=mdcat-source:w=(\d+):j=([01]):m=([01]):f=([01]);"
+    r"data:text/markdown;base64,([A-Za-z0-9+/=]*)\x1b\\\x1b\]8;;\x1b\\",
 )
 # Rich's default theme gives each heading level its own style, most specific
 # first so H4 (italic magenta) is not read as H5 (italic). A paragraph that is
@@ -37,20 +50,128 @@ _HEADINGS = (
 _TABLE_STYLE = frozenset({"fg36"})
 
 
-def unrender(text: str) -> str:
-    """Convert mdcat output, ANSI or plain, back to markdown.
+@dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
+class Layout:
+    """What decides a render's text, apart from its source.
 
-    Args:
-      text: What mdcat printed.
-
-    Returns:
-      markdown: The source carried by ``text``; without one, the markdown that
-        renders as ``text``, as far as ``text`` shows it.
+    Attributes:
+      width: Columns the text was wrapped to.
+      justify: Whether paragraphs were fully justified.
+      math: Whether LaTeX math was converted.
+      frontmatter: Whether YAML frontmatter was kept.
 
     """
-    source = embedded_source(text)
-    if source is not None:
+
+    width: int
+    justify: bool
+    math: bool
+    frontmatter: bool
+
+
+def unrender(text: str, *, render: Callable[[str, Layout], str]) -> str:
+    """Convert mdcat's ANSI output back to markdown.
+
+    Args:
+      text: What mdcat printed or wrote; several files' output may be joined.
+      render: Renders markdown as uncolored text under a layout, to check that
+        a hidden source still matches the text shown.
+
+    Returns:
+      markdown: Each file's hidden source where it matches what is shown,
+        otherwise the markdown that renders as the text shown, as far as it
+        shows it; files are kept a blank line apart.
+
+    """
+    if "\x1b" not in text:
+        return text
+    runs = _runs(list(_MARK.finditer(text)))
+    bounds = [*(run[0].start() for run in runs), len(text)]
+    parts = [_visual(text[: bounds[0]])]
+    for index, run in enumerate(runs):
+        shown = text[run[-1].end() : bounds[index + 1]]
+        parts.append(_restore(run, shown=shown, render=render))
+    out = ""
+    for part in parts:
+        if out and part:
+            out += "\n" * max(0, 2 - len(out) + len(out.rstrip("\n")))
+        out += part
+    return out
+
+
+def mark_source(source: str, *, layout: Layout) -> str:
+    """Return invisible escape codes that carry ``source`` for ``unrender``.
+
+    Each code is an OSC 8 hyperlink opened and closed around no text, which
+    terminals and ``less -R`` display as nothing.
+
+    Args:
+      source: Markdown source, exactly as read.
+      layout: How the text that follows the codes was rendered.
+
+    Returns:
+      codes: One empty hyperlink per 1500-byte piece of ``source``, at least one.
+
+    """
+    data = source.encode()
+    params = (
+        f"w={layout.width}:j={layout.justify:d}:m={layout.math:d}"
+        f":f={layout.frontmatter:d}"
+    )
+    # VTE ignores a hyperlink URI over 2083 bytes; 1500 bytes encode to 2000.
+    return "".join(
+        f"\x1b]8;id=mdcat-source:{params};data:text/markdown;base64,"
+        + base64.b64encode(data[start : start + 1500]).decode("ascii")
+        + "\x1b\\\x1b]8;;\x1b\\"
+        for start in range(0, len(data) or 1, 1500)
+    )
+
+
+def _runs(marks: list[re.Match[str]]) -> list[list[re.Match[str]]]:
+    """Group adjacent source codes: each group is one file's."""
+    runs: list[list[re.Match[str]]] = []
+    for mark in marks:
+        if runs and runs[-1][-1].end() == mark.start():
+            runs[-1].append(mark)
+        else:
+            runs.append([mark])
+    return runs
+
+
+def _restore(
+    run: list[re.Match[str]],
+    *,
+    shown: str,
+    render: Callable[[str, Layout], str],
+) -> str:
+    """Return a file's hidden source if it renders as ``shown``, else read ``shown``."""
+    width, justify, math, frontmatter = run[0].group(1, 2, 3, 4)
+    assert isinstance(width, str)
+    layout = Layout(
+        width=int(width),
+        justify=justify == "1",
+        math=math == "1",
+        frontmatter=frontmatter == "1",
+    )
+    try:
+        source = b"".join(
+            base64.b64decode(mark.group(5), validate=True) for mark in run
+        ).decode()
+    # Corrupt base64 raises binascii.Error, and bytes that are not UTF-8 raise
+    # UnicodeDecodeError; both are ValueErrors.
+    except ValueError:
+        return _visual(shown)
+    if _shown_text(render(source, layout)) == _shown_text(shown):
         return source
+    return _visual(shown)
+
+
+def _shown_text(text: str) -> str:
+    """Return the text a terminal would show for ``text``, trailing spaces cut."""
+    return "\n".join(_plain(_spans(line)).rstrip() for line in text.split("\n"))
+
+
+def _visual(text: str) -> str:
+    """Read markdown back from what mdcat's output shows."""
     lines = [_spans(line) for line in text.split("\n")]
     out: list[str] = []
     lists: list[tuple[int, int]] = []
@@ -73,46 +194,6 @@ def unrender(text: str) -> str:
         i += 1
     # Rich opens some blocks with a blank line; markdown never needs one first.
     return "\n".join(out).lstrip("\n")
-
-
-def mark_source(
-    source: str,
-    *,
-    link: str = "\x1b]8;id=mdcat-source;data:text/markdown;base64,",
-) -> str:
-    """Return invisible escape codes that carry ``source`` for ``unrender``.
-
-    Each code is an OSC 8 hyperlink opened and closed around no text, which
-    terminals and ``less -R`` display as nothing.
-
-    Args:
-      source: Markdown source, exactly as read.
-      link: Opening of each hyperlink, before its base64 piece.
-
-    Returns:
-      codes: One empty hyperlink per 1500-byte piece of ``source``.
-
-    """
-    data = source.encode()
-    # VTE ignores a hyperlink URI over 2083 bytes; 1500 bytes encode to 2000.
-    return "".join(
-        link
-        + base64.b64encode(data[start : start + 1500]).decode("ascii")
-        + "\x1b\\\x1b]8;;\x1b\\"
-        for start in range(0, len(data), 1500)
-    )
-
-
-def embedded_source(
-    text: str,
-    *,
-    link: str = "\x1b]8;id=mdcat-source;data:text/markdown;base64,",
-) -> str | None:
-    """Return the source ``mark_source`` hid in ``text``, in order, or None."""
-    pieces = re.findall(re.escape(link) + r"([A-Za-z0-9+/=]*)\x1b\\", text)
-    if not pieces:
-        return None
-    return b"".join(base64.b64decode(piece, validate=True) for piece in pieces).decode()
 
 
 @dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
