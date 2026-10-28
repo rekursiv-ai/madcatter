@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
+import functools
 import re
 
 from pylatexenc import latexwalker
@@ -14,6 +15,10 @@ from pylatexenc.latexwalker import (
     LatexMacroNode,
     LatexNode,
 )
+
+
+if TYPE_CHECKING:
+    from pylatexenc.macrospec import LatexContextDb
 
 
 # Additional LaTeX symbol mappings not handled by pylatexenc.
@@ -262,7 +267,7 @@ def latex2unicode(latex: str) -> str:
 def _latex_to_unicode_ast(latex: str) -> str:
     """Convert LaTeX to Unicode using AST parsing."""
     # Parse LaTeX into AST.
-    walker = latexwalker.LatexWalker(latex)
+    walker = latexwalker.LatexWalker(latex, latex_context=_walker_context())
     nodes, _, _ = walker.get_latex_nodes()
 
     # Convert AST to Unicode.
@@ -271,13 +276,12 @@ def _latex_to_unicode_ast(latex: str) -> str:
 
 def _process_chars_with_scripts(chars: str) -> str:
     """Process character string containing unbraced ^x or _x patterns."""
-    converter = LatexNodes2Text()
-    unicode_text = converter.latex_to_text(chars)
+    unicode_text = _converter().latex_to_text(chars, latex_context=_walker_context())
     return _convert_scripts(unicode_text)
 
 
 def _nodes_to_unicode(nodes: list[LatexNode]) -> str:
-    converter = LatexNodes2Text()
+    converter = _converter()
     result: list[str] = []
     i = 0
 
@@ -324,7 +328,7 @@ def _process_chars_node(
         return _process_chars_with_scripts(chars), 1
 
     # Regular character sequence.
-    return converter.latex_to_text(chars), 1
+    return converter.latex_to_text(chars, latex_context=_walker_context()), 1
 
 
 def _try_handle_script_after_chars(
@@ -353,7 +357,7 @@ def _try_handle_script_after_chars(
 
     if isinstance(next_node, LatexMacroNode):
         macro_text = "\\" + next_node.macroname
-        content = converter.latex_to_text(macro_text)
+        content = converter.latex_to_text(macro_text, latex_context=_walker_context())
         return base + _convert_to_script(content, scripts, open_p, close_p), 2
 
     return "", 0
@@ -373,13 +377,14 @@ def _process_macro_node(
 
     # Handle fractions specially.
     if macro_name == "frac":
-        result = _try_convert_fraction(node)
-        if result:
-            return result, 1
+        return _try_convert_fraction(node), 1
 
     # Convert macro normally.
     macro_latex = _reconstruct_macro_latex(node)
-    unicode_text = converter.latex_to_text(macro_latex)
+    unicode_text = converter.latex_to_text(
+        macro_latex,
+        latex_context=_walker_context(),
+    )
 
     # Check if followed by ^{...} or _{...}.
     result, skip = _try_handle_script_after_macro(unicode_text, nodes, i)
@@ -390,17 +395,12 @@ def _process_macro_node(
 
 
 def _try_convert_fraction(node: LatexMacroNode) -> str:
+    r"""Render ``\\frac``, with a missing numerator or denominator as empty."""
     args = node.nodeargd
-    if args is None or args.argnlist is None or len(args.argnlist) < 2:
-        return ""
-
-    numer_node = args.argnlist[0]
-    denom_node = args.argnlist[1]
-    if not (numer_node and denom_node):
-        return ""
-
-    numer = _nodes_to_unicode(numer_node.nodelist)
-    denom = _nodes_to_unicode(denom_node.nodelist)
+    parts = list(args.argnlist or []) if args is not None else []
+    numer_node, denom_node = [*parts, None, None][:2]
+    numer = _nodes_to_unicode(numer_node.nodelist) if numer_node else ""
+    denom = _nodes_to_unicode(denom_node.nodelist) if denom_node else ""
     return _convert_fraction(numer, denom)
 
 
@@ -517,3 +517,15 @@ def _convert_scripts(text: str) -> str:
         _convert_subscript_match,
         text,
     )
+
+
+# Pylatexenc rebuilds its default macro database on every walker and converter
+# it constructs (about 0.2 ms each); build each once and share it.
+@functools.cache
+def _walker_context() -> LatexContextDb:
+    return latexwalker.get_default_latex_context_db()
+
+
+@functools.cache
+def _converter() -> LatexNodes2Text:
+    return LatexNodes2Text()

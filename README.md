@@ -32,8 +32,8 @@ mdcat README.md
 
 ![cat sample.md on the left, mdcat sample.md on the right](https://raw.githubusercontent.com/rekursiv-ai/madcatter/main/docs/assets/screenshot.png)
 
-> *If you like reading Markdown in the terminal and want it actually rendered — emoji, math,
-> tables, syntax highlighting — instead of dumped raw.*
+> *If you like reading Markdown in the terminal and want it actually rendered -- emoji, math,
+> tables, syntax highlighting -- instead of dumped raw.*
 
 ```bash
 mdcat README.md                  # render a file
@@ -123,7 +123,7 @@ mdcat --code-lang python README.md
 mdcat old.md --diff new.md
 ```
 
-**Watch vs. follow** — both require a single real file path (stdin `-` is rejected), and the two
+**Watch vs. follow** -- both require a single real file path (stdin `-` is rejected), and the two
 are mutually exclusive with each other:
 
 ```bash
@@ -139,7 +139,7 @@ mdcat --export-html out.html README.md
 mdcat --export-ansi out.ansi README.md
 ```
 
-**ASCII-only output** (no ANSI codes, no Unicode — box-drawing, bullets, arrows, etc. are
+**ASCII-only output** (no ANSI codes, no Unicode -- box-drawing, bullets, arrows, etc. are
 transliterated)
 
 ```bash
@@ -158,7 +158,7 @@ mdcat -i --unrender notes.md     # notes.md is markdown again
 mdcat notes.md | mdcat --unrender -   # markdown read back from the render
 ```
 
-**Strip YAML frontmatter** before rendering — useful for notes that start with a `---` metadata
+**Strip YAML frontmatter** before rendering -- useful for notes that start with a `---` metadata
 block
 
 ```bash
@@ -192,23 +192,20 @@ uv run pytest
 ```
 
 Tests are organized into tiers via `pytest` markers (see `pyproject.toml`). The default run
-(`uv run pytest`) excludes the slower/networked tiers — `ci_smoke`, `cuda`, `integration`,
-`performance`, `cluster`, and `slow` — so opt in explicitly when needed, e.g.:
+(`uv run pytest`) excludes the slower/networked tiers -- `ci_smoke`, `cuda`, `integration`,
+`performance`, `cluster`, and `slow` -- so opt in explicitly when needed, e.g.:
 
 ```bash
 uv run pytest -m ci_smoke        # package/CLI smoke tests
 uv run pytest -m integration     # tests needing networking or external CLIs
 ```
 
-Before opening a pull request, run the same checks CI runs in `package-validation.yml`:
+Before opening a pull request, run the same checks CI runs in `package-validation.yml`.
+Lint, type checks, and tests all come from `.pre-commit-config.yaml`:
 
 ```bash
-uv run ruff check --no-fix --no-cache .
-uv run ruff format --check --no-cache .
-uv run codespell .
-uv run ty check
-uv run basedpyright madcatter
-uv run pytest
+uv run pre-commit run --all-files --hook-stage pre-commit
+uv run pre-commit run --all-files --hook-stage pre-push
 uv build
 ```
 
@@ -216,12 +213,12 @@ uv build
 
 Sibling projects in the [rekursiv-ai](https://github.com/rekursiv-ai) family:
 
-- [sagent](https://github.com/rekursiv-ai/sagent) — The self-mutating multi-provider coding-agent CLI and typed Python library.
-- [trackinizer](https://github.com/rekursiv-ai/trackinizer) — Centralized agent database for tracking inquiries, work, and the evidence behind conclusions.
-- [wesearch](https://github.com/rekursiv-ai/wesearch) — Web search, resilient page fetch, and scholarly-paper lookup without a browser stack.
-- [priml](https://github.com/rekursiv-ai/priml) — Composable PyTorch building blocks: models, optimizers, losses, and a step-based training loop.
-- [configgle](https://github.com/rekursiv-ai/configgle) — Hierarchical experiment configuration in typed pure-Python dataclasses instead of YAML.
-- [copybarista](https://github.com/rekursiv-ai/copybarista) — Bidirectional source sync for publishing OSS-ready trees from a monorepo.
+- [sagent](https://github.com/rekursiv-ai/sagent) -- The self-mutating multi-provider coding-agent CLI and typed Python library.
+- [trackinizer](https://github.com/rekursiv-ai/trackinizer) -- Centralized agent database for tracking inquiries, work, and the evidence behind conclusions.
+- [wesearch](https://github.com/rekursiv-ai/wesearch) -- Web search, resilient page fetch, and scholarly-paper lookup without a browser stack.
+- [priml](https://github.com/rekursiv-ai/priml) -- Composable PyTorch building blocks: models, optimizers, losses, and a step-based training loop.
+- [configgle](https://github.com/rekursiv-ai/configgle) -- Hierarchical experiment configuration in typed pure-Python dataclasses instead of YAML.
+- [copybarista](https://github.com/rekursiv-ai/copybarista) -- Bidirectional source sync for publishing OSS-ready trees from a monorepo.
 
 ## Citing
 

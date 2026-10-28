@@ -23,6 +23,18 @@ def test_resolve_does_not_strip_non_colon_characters() -> None:
     assert emoji.resolve("XsmileX") is None
 
 
+def test_gendered_sequences_join_with_zero_width_joiner() -> None:
+    unjoined = {
+        name: value
+        for name, value in emoji.EMOJI.items()
+        if len(core := value.rstrip("\ufe0f")) > 1
+        and core[-1] in "♂♀"
+        and core[-2] != "\u200d"
+    }
+    assert unjoined == {}
+    assert emoji.resolve("biking_man") == "🚴\u200d♂"
+
+
 if __name__ == "__main__":
     from madcatter.lib.testing.runner import test_main
 

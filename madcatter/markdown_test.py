@@ -2,22 +2,18 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-import secrets
+import pytest
 
 from madcatter import markdown
 from madcatter.markdown import (
+    code_lines,
     inside_fence,
     is_fence_delimiter,
     normalize_bullets,
     process_math_blocks,
+    split_code_spans,
     strip_frontmatter,
 )
-
-
-if TYPE_CHECKING:
-    import pytest
 
 
 def test_process_math_blocks_inline():
@@ -174,18 +170,98 @@ def test_process_math_blocks_preserves_math_inside_inline_code():
     assert process_math_blocks(text) == "`$x^2$` and y²"
 
 
-def test_process_math_blocks_uses_eight_byte_nonce(
+def test_process_math_blocks_restores_backslashes_in_code_verbatim():
+    text = "`\\1 \\g<0> \\n`\n```\nre.sub(r'\\d', r'\\1', s)\n```"
+    assert process_math_blocks(text) == text
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Cost $5 and `x` then $10.",
+        "Price $5 `a_b` $7",
+        "$$\na\n```\ncode\n```\nb\n$$",
+        "$x `$` y^2$",
+        "\t$x^2$\n",
+        "> ```\n> $x^2$\n> ```\n",
+    ],
+)
+def test_process_math_blocks_never_reads_math_across_or_inside_code(text: str):
+    assert process_math_blocks(text) == text
+
+
+@pytest.mark.parametrize(
+    ("text", "pieces"),
+    [
+        ("a `b` c", [("a ", False), ("`b`", True), (" c", False)]),
+        ("``x ` y`` z", [("``x ` y``", True), (" z", False)]),
+        ("`a``b` `", [("`a``b`", True), (" `", False)]),
+        ("\\`a` `b`", [("\\`a", False), ("` `", True), ("b`", False)]),
+        ("`a\n\nb`", [("`a\n\nb`", False)]),
+        ("x```", [("x```", False)]),
+    ],
+)
+def test_split_code_spans_follows_commonmark_runs(
+    text: str,
+    pieces: list[tuple[str, bool]],
+):
+    assert split_code_spans(text) == pieces
+
+
+def test_code_lines_marks_fenced_indented_and_quoted_code_only():
+    text = "p\n```\nx\n```\n\n    y\n- a\n    - b\n> ```\n> z\n> ```"
+    assert code_lines(text) == [
+        False,
+        True,
+        True,
+        True,
+        False,
+        True,
+        False,
+        False,
+        True,
+        True,
+        True,
+    ]
+
+
+def test_process_math_blocks_skips_the_block_parse_without_math(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls: list[int] = []
+    parses: list[str] = []
+    real = markdown.code_lines
 
-    def token_hex(nbytes: int) -> str:
-        calls.append(nbytes)
-        return "fixed"
+    def counting(text: str) -> list[bool]:
+        parses.append(text)
+        return real(text)
 
-    monkeypatch.setattr(secrets, "token_hex", token_hex)
-    assert markdown.process_math_blocks("`$x^2$`") == "`$x^2$`"
-    assert calls == [8]
+    monkeypatch.setattr(markdown, "code_lines", counting)
+    plain = "Cost $5 and `x` then $10.\n```\nmore $3\n```\n"
+    assert process_math_blocks(plain) == plain
+    assert parses == []
+    assert process_math_blocks("a $x^2$") == "a x²"
+    assert parses == ["a $x^2$"]
+
+
+def test_process_math_blocks_converts_math_in_a_nested_list_item():
+    assert process_math_blocks("- a\n    - $x^2$\n") == "- a\n    - x²\n"
+
+
+def test_process_math_blocks_reads_each_character_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A per-span rescan of the document made a 1.9 MB file take 8 s."""
+    seen: list[int] = []
+    convert = markdown._math_to_unicode
+
+    def counting(text: str) -> str:
+        seen.append(len(text))
+        return convert(text)
+
+    monkeypatch.setattr(markdown, "_math_to_unicode", counting)
+    text = "`a` $x^2$ b\n" * 2_000 + "```\ncode\n```\n" + "`c` $y_i$\n" * 2_000
+    process_math_blocks(text)
+    assert sum(seen) <= len(text)
 
 
 def test_strip_frontmatter_closes_at_first_possible_line():
