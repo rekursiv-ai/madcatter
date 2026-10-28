@@ -31,6 +31,7 @@ from rich.markdown import (
     MarkdownElement,
     Paragraph,
 )
+from rich.markup import escape
 from rich.panel import Panel
 from rich.rule import Rule
 from rich.segment import Segment
@@ -43,10 +44,12 @@ import requests
 
 from madcatter.emoji import resolve
 from madcatter.markdown import (
+    code_lines,
     inside_fence,
     is_fence_delimiter,
     normalize_bullets,
     process_math_blocks,
+    split_code_spans,
     strip_frontmatter,
 )
 from madcatter.unrender import Layout, mark_source, unrender
@@ -54,6 +57,9 @@ from madcatter.unrender import Layout, mark_source, unrender
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+
+_SHORTCODE: Final = re.compile(r":([a-z0-9_+\-]+):")
 
 
 class _Flags(Protocol):
@@ -225,13 +231,13 @@ class Markdown(MarkdownBase):
 
 
 def process_emoji(text: str) -> str:
-    """Replace :shortcode: with Unicode emoji, skipping code blocks.
+    """Replace :shortcode: with Unicode emoji, outside code blocks and spans.
 
     Args:
       text: Markdown text to process.
 
     Returns:
-      result: Markdown with :shortcode: expanded to emoji outside fenced code.
+      result: Markdown with each known :shortcode: in prose expanded to emoji.
 
     """
 
@@ -239,34 +245,29 @@ def process_emoji(text: str) -> str:
         resolved = resolve(match.group(1))
         return resolved if resolved is not None else match.group(0)
 
+    # A fence-and-indent line scan, not the block parse (0.3 s on 2 MB): a tab-
+    # indented code line expands, and a 4-space nested list item stays literal.
     lines = text.split("\n")
     result: list[str] = []
     for line, in_fence in zip(lines, inside_fence(lines), strict=True):
         if is_fence_delimiter(line) or in_fence or line.startswith("    "):
             result.append(line)
         else:
-            result.append(re.sub(r":([a-z0-9_+\-]+):", _replace, line))
+            result.append(
+                "".join(
+                    piece if is_code else _SHORTCODE.sub(_replace, piece)
+                    for piece, is_code in split_code_spans(line)
+                ),
+            )
     return "\n".join(result)
 
 
 # Style profiles.
 STYLE_PROFILES: Final = {
-    "dark": {
-        "code_theme": "monokai",
-        "background": "black",
-    },
-    "light": {
-        "code_theme": "default",
-        "background": "white",
-    },
-    "dracula": {
-        "code_theme": "dracula",
-        "background": "black",
-    },
-    "solarized": {
-        "code_theme": "solarized-dark",
-        "background": "black",
-    },
+    "dark": {"code_theme": "monokai"},
+    "light": {"code_theme": "default"},
+    "dracula": {"code_theme": "dracula"},
+    "solarized": {"code_theme": "solarized-dark"},
 }
 
 
@@ -317,7 +318,7 @@ def render_toc(headings: list[tuple[int, str]], console: Console) -> None:
 
         # Add node under current parent.
         parent_tree = stack[-1][1]
-        node = parent_tree.add(f"[bold]{title}[/bold]")
+        node = parent_tree.add(f"[bold]{escape(title)}[/bold]")
         stack.append((level, node))
 
     console.print(tree)
@@ -334,20 +335,18 @@ def extract_links(markdown_body: str) -> list[str]:
       links: Unique href and src URLs found in links and images.
 
     """
-    md = MarkdownIt()
-    tokens = md.parse(markdown_body)
-
     links: list[str] = []
-    for token in tokens:
-        if token.type == "link_open":
-            href = token.attrGet("href")
-            if isinstance(href, str) and href:
-                links.append(href)
-        elif token.type == "image":
-            src = token.attrGet("src")
-            if isinstance(src, str) and src:
-                links.append(src)
-
+    # Links and images are children of ``inline`` tokens, never top level.
+    for block in MarkdownIt().parse(markdown_body):
+        for token in block.children or ():
+            if token.type == "link_open":
+                url = token.attrGet("href")
+            elif token.type == "image":
+                url = token.attrGet("src")
+            else:
+                continue
+            if isinstance(url, str) and url:
+                links.append(url)
     return links
 
 
@@ -367,17 +366,17 @@ def check_links(links: list[str], console: Console) -> None:
         # Skip relative/anchor links.
         parsed = urlparse(link)
         if not parsed.scheme or parsed.scheme not in ("http", "https"):
-            table.add_row(link, "[dim]skipped (not http/s)[/dim]")
+            table.add_row(escape(link), "[dim]skipped (not http/s)[/dim]")
             continue
 
         try:
             response = requests.head(link, timeout=5, allow_redirects=True)
             if response.status_code < 400:
-                table.add_row(link, f"[green]✓ {response.status_code}[/green]")
+                table.add_row(escape(link), f"[green]✓ {response.status_code}[/green]")
             else:
-                table.add_row(link, f"[red]✗ {response.status_code}[/red]")
+                table.add_row(escape(link), f"[red]✗ {response.status_code}[/red]")
         except requests.RequestException as e:
-            table.add_row(link, f"[red]✗ {type(e).__name__}[/red]")
+            table.add_row(escape(link), f"[red]✗ {type(e).__name__}[/red]")
 
     console.print(table)
 
@@ -425,7 +424,7 @@ def render_code_blocks(
     for i, (lang, code) in enumerate(code_blocks):
         if i > 0:
             console.print()
-        title = f"Code Block {i + 1}" + (f" ({lang})" if lang else "")
+        title = f"Code Block {i + 1}" + (f" ({escape(lang)})" if lang else "")
         console.print(Panel(Syntax(code, lang or "text", theme="monokai"), title=title))
 
 
@@ -444,8 +443,8 @@ def filter_section(markdown_body: str, section_name: str) -> str:
     section_lines: list[str] = []
     section_state: dict[str, int] = {}
 
-    for line in lines:
-        if match := re.match(r"^(#{1,6})\s+(.+)$", line):
+    for line, in_code in zip(lines, code_lines(markdown_body), strict=True):
+        if not in_code and (match := re.match(r"^(#{1,6})\s+(.+)$", line)):
             level = len(match.group(1))
             title = match.group(2).strip()
 
@@ -479,15 +478,15 @@ def render_diff(file1: str, file2: str, console: Console) -> None:
     for diff_line in diff:
         stripped = diff_line.rstrip()
         if stripped.startswith(("+++", "---")):
-            console.print(stripped, style="bold cyan")
+            console.print(stripped, style="bold cyan", markup=False)
         elif stripped.startswith("@@"):
-            console.print(stripped, style="bold magenta")
+            console.print(stripped, style="bold magenta", markup=False)
         elif stripped.startswith("+"):
-            console.print(stripped, style="green")
+            console.print(stripped, style="green", markup=False)
         elif stripped.startswith("-"):
-            console.print(stripped, style="red")
+            console.print(stripped, style="red", markup=False)
         else:
-            console.print(stripped, style="dim")
+            console.print(stripped, style="dim", markup=False)
 
 
 def follow_file(
@@ -514,7 +513,7 @@ def follow_file(
     """
     anchors: collections.deque[bytes] = collections.deque(maxlen=anchor_window)
     last_data: bytes | None = None
-    console.print(f"[dim]Following {path} (Ctrl+C to quit)...[/dim]\n")
+    console.print(f"[dim]Following {escape(path)} (Ctrl+C to quit)...[/dim]\n")
 
     try:
         while True:
@@ -572,21 +571,26 @@ def watch_file(
 
     """
     last_mtime = 0.0
-    console.print(f"[dim]Watching {path} for changes (Ctrl+C to quit)...[/dim]\n")
+    console.print(
+        f"[dim]Watching {escape(path)} for changes (Ctrl+C to quit)...[/dim]\n",
+    )
 
+    missing = False
     try:
         while True:
             current_mtime = _mtime_or_none(path)
-            if current_mtime is None:
-                console.print(f"[red]File {path} not found[/red]")
-            elif current_mtime != last_mtime:
-                last_mtime = current_mtime
+            if current_mtime is not None and current_mtime != last_mtime:
                 console.clear()
                 console.print(
                     f"[dim]Updated at {time.strftime('%H:%M:%S')}[/dim]\n",
                 )
-                render_func(path, console, flags)
-
+                # Removed between the stat and the read: report it, retry next tick.
+                if not _render_or_false(render_func, path, console, flags):
+                    current_mtime = None
+                last_mtime = current_mtime or 0.0
+            if current_mtime is None and not missing:
+                console.print(f"[red]File {escape(path)} not found[/red]")
+            missing = current_mtime is None
             time.sleep(1)
     except KeyboardInterrupt:
         console.print("\n[dim]Stopped watching[/dim]")
@@ -600,7 +604,8 @@ def export_html(markdown_body: str, output_path: str) -> None:
       output_path: File path to write the rendered HTML document to.
 
     """
-    md = MarkdownIt()
+    # Raw HTML in the source is shown as text, never emitted as markup.
+    md = MarkdownIt("commonmark", {"html": False})
     html = cast(str, md.render(markdown_body))
 
     html_template = f"""<!DOCTYPE html>
@@ -621,8 +626,11 @@ def export_html(markdown_body: str, output_path: str) -> None:
 </html>
 """
 
-    with Path(output_path).open("w", encoding="utf-8") as f:
-        f.write(html_template)
+    try:
+        with Path(output_path).open("w", encoding="utf-8") as f:
+            f.write(html_template)
+    except OSError as error:
+        raise _UserError(output_path, error) from error
 
 
 def set_terminal_title(title: str, tty: str = "/dev/tty") -> None:
@@ -682,8 +690,23 @@ def render_markdown_file(path: str, console: Console, flags: _Flags) -> str:
       markdown_body: Processed markdown string before rendering.
 
     """
+    return render_markdown(unrender(_read(path), render=render_plain), console, flags)
+
+
+def render_markdown(source: str, console: Console, flags: _Flags) -> str:
+    """Render markdown source as ``render_markdown_file`` does, returning the body.
+
+    Args:
+      source: Markdown source, already read back from any mdcat render.
+      console: Rich Console to write rendered output to.
+      flags: Parsed display mode flags (toc, links, section, etc).
+
+    Returns:
+      markdown_body: Processed markdown string before rendering.
+
+    """
     markdown_body = _prepare(
-        unrender(_read(path), render=render_plain),
+        source,
         frontmatter=not flags.no_frontmatter,
         math=flags.math,
     )
@@ -692,7 +715,7 @@ def render_markdown_file(path: str, console: Console, flags: _Flags) -> str:
     if flags.section:
         markdown_body = filter_section(markdown_body, flags.section)
         if not markdown_body:
-            console.print(f"[red]Section '{flags.section}' not found[/red]")
+            console.print(f"[red]Section '{escape(flags.section)}' not found[/red]")
             return ""
 
     # Handle various display modes.
@@ -781,7 +804,7 @@ def rewritten(path: str, flags: _Flags) -> str:
     if flags.unrender:
         return source
     buffer = io.StringIO()
-    render_markdown_file(path, Console(file=buffer), flags)
+    render_markdown(source, Console(file=buffer), flags)
     width = flags.pad or flags.width
     assert isinstance(width, int)
     layout = Layout(
@@ -794,11 +817,19 @@ def rewritten(path: str, flags: _Flags) -> str:
 
 
 def main() -> int:
-    """Entry point; exit quietly if a pipe reader (e.g. `less`) quits early."""
+    """Entry point; exit quietly if a pipe reader (e.g. `less`) quits early.
+
+    Returns:
+      status: 0 on success; a file mdcat cannot read or write exits 1 instead.
+
+    """
     try:
         return _main()
     except BrokenPipeError:
         _exit_on_broken_pipe()
+    except _UserError as error:
+        sys.stderr.write(f"{error}\n")
+        raise SystemExit(1) from None
 
 
 def _main() -> int:
@@ -828,6 +859,9 @@ def _main() -> int:
         parser.error("--follow and --watch are mutually exclusive")
     if flags.follow and flags.page:
         parser.error("--page and --follow cannot be used together")
+    # The pager receives the render, so none reaches the buffer the export saves.
+    if flags.page and flags.export_ansi:
+        parser.error("--page cannot be combined with --export-ansi")
     if flags.follow and (
         flags.toc or flags.links or flags.check_links or flags.code_only
     ):
@@ -927,13 +961,16 @@ def _main() -> int:
 
     if flags.export_html:
         export_html(combined_body, flags.export_html)
-        console.print(f"[green]Exported HTML to {flags.export_html}[/green]")
+        console.print(f"[green]Exported HTML to {escape(flags.export_html)}[/green]")
 
     if flags.export_ansi:
         assert isinstance(buffer, io.StringIO)
-        with Path(flags.export_ansi).open("w", encoding="utf-8") as f:
-            f.write(buffer.getvalue())
-        console.print(f"[green]Exported ANSI to {flags.export_ansi}[/green]")
+        try:
+            with Path(flags.export_ansi).open("w", encoding="utf-8") as f:
+                f.write(buffer.getvalue())
+        except OSError as error:
+            raise _UserError(flags.export_ansi, error) from error
+        console.print(f"[green]Exported ANSI to {escape(flags.export_ansi)}[/green]")
 
     if buffer is not None:
         text = buffer.getvalue()
@@ -945,28 +982,41 @@ def _main() -> int:
 # they were.
 def _rewrite(flags: _Flags) -> None:
     """Unrender or render each path, to stdout or back over the file."""
-    texts: list[str] = []
-    for path in flags.path:
-        try:
-            texts.append(rewritten(path, flags))
-        except (OSError, UnicodeDecodeError) as error:
-            sys.stderr.write(f"mdcat: {path}: {error}\n")
-            sys.exit(1)
+    texts = [rewritten(path, flags) for path in flags.path]
     for path, text in zip(flags.path, texts, strict=True):
         if flags.in_place:
-            Path(path).write_text(text, encoding="utf-8", newline="")
+            _write(path, text)
         else:
             sys.stdout.write(text)
 
 
+class _UserError(Exception):
+    """A file mdcat could not read or write; ``main`` reports it on one line."""
+
+    def __init__(self, path: str, error: OSError | UnicodeDecodeError) -> None:
+        reason = error.strerror if isinstance(error, OSError) else None
+        super().__init__(f"mdcat: {path}: {reason or error}")
+
+
 def _read(path: str) -> str:
     """Read ``path`` as UTF-8 with its line endings kept, or stdin for ``-``."""
-    if path != "-":
+    try:
+        if path == "-":
+            text = sys.stdin.read()
+            assert isinstance(text, str)
+            return text
         with Path(path).open(encoding="utf-8", newline="") as file:
             return file.read()
-    text = sys.stdin.read()
-    assert isinstance(text, str)
-    return text
+    except (OSError, UnicodeDecodeError) as error:
+        raise _UserError(path, error) from error
+
+
+def _write(path: str, text: str) -> None:
+    """Write ``text`` to ``path`` as UTF-8, exactly as given."""
+    try:
+        Path(path).write_text(text, encoding="utf-8", newline="")
+    except OSError as error:
+        raise _UserError(path, error) from error
 
 
 def _line_hash(line: str) -> bytes:
@@ -1083,9 +1133,9 @@ def _parse_args(
     parser.add_argument(
         "-y",
         "--hyperlinks",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=True,
-        help="enable hyperlinks",
+        help="emit terminal hyperlinks (default: on)",
     )
     parser.add_argument(
         "-w",
@@ -1214,3 +1264,17 @@ def _prepare(source: str, *, frontmatter: bool, math: bool) -> str:
         body = "\n".join(strip_frontmatter(body.splitlines()))
     body = normalize_bullets(process_emoji(body))
     return process_math_blocks(body, enable_math=math)
+
+
+def _render_or_false(
+    render_func: Callable[[str, Console, _Flags], str],
+    path: str,
+    console: Console,
+    flags: _Flags,
+) -> bool:
+    """Render ``path``; report False if it could not be read."""
+    try:
+        render_func(path, console, flags)
+    except _UserError:
+        return False
+    return True

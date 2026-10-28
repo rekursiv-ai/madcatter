@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from typing import cast
+from typing import TYPE_CHECKING, cast
 from unittest.mock import Mock
 
+import functools
 import re
 
-from pylatexenc import latexwalker
+from pylatexenc import latex2text, latexwalker
 from pylatexenc.latex2text import LatexNodes2Text
 from pylatexenc.latexwalker import LatexCharsNode, LatexGroupNode, LatexMacroNode
 from pylatexenc.macrospec._argparsers import ParsedMacroArgs
@@ -19,6 +20,12 @@ from madcatter.latex import (
     _try_convert_fraction,
     latex2unicode,
 )
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from pylatexenc.macrospec import LatexContextDb
 
 
 def test_latex2unicode_basic_symbols():
@@ -130,7 +137,7 @@ def test_latex2unicode_fallback_on_error():
 
 
 def test_latex2unicode_exception_handling():
-    """Test exception handling returns original LaTeX (lines 224-226)."""
+    """Test exception handling returns original LaTeX."""
     # Create a string that might trigger parsing errors.
     problematic = r"\begin{matrix} \end{matrix}"
     result = latex2unicode(problematic)
@@ -143,28 +150,28 @@ def test_latex2unicode_exception_handling():
 
 
 def test_latex2unicode_unknown_node_type():
-    """Test handling of unknown node types (line 304)."""
+    """Test handling of unknown node types."""
     # Most latex expressions should work even with complex structures.
     result = latex2unicode(r"\text{hello} x^2")
     assert result == "hello x²"
 
 
 def test_latex2unicode_no_next_node():
-    """Test handling when there's no next node for scripts (line 350)."""
+    """Test handling when there's no next node for scripts."""
     # Edge case: script at end without following content.
     result = latex2unicode(r"x^")
     assert "x" in result
 
 
 def test_latex2unicode_no_macro_after_script():
-    """Test when script is not followed by group/macro (line 381)."""
+    """Test when script is not followed by group/macro."""
     # Test script followed by whitespace or other content.
     result = latex2unicode(r"x^ 2")
     assert result == "x^ 2"
 
 
 def test_latex2unicode_custom_symbols():
-    """Test custom symbols from _EXTRA_SYMBOLS (line 400)."""
+    """Test custom symbols from _EXTRA_SYMBOLS."""
     # Test implies symbol.
     result = latex2unicode(r"\implies")
     assert result == "⟹"
@@ -182,15 +189,19 @@ def test_latex2unicode_custom_symbols():
     assert result == "🔥"
 
 
-def test_latex2unicode_fraction_without_args():
-    """Test fraction without proper arguments (lines 429, 434)."""
-    # This tests the early returns in _try_convert_fraction.
-    result = latex2unicode(r"\frac{}")
-    assert result == "%s/%s"
+@pytest.mark.parametrize(
+    ("latex", "text"),
+    [(r"\frac{}", "/"), (r"\frac{a}", "/a"), (r"\frac", "/"), (r"\frac{a}{}", "a/")],
+)
+def test_latex2unicode_fraction_with_missing_args_renders_them_empty(
+    latex: str,
+    text: str,
+):
+    assert latex2unicode(latex) == text
 
 
 def test_latex2unicode_no_macro_for_script():
-    """Test when next node after script is not a macro (lines 457, 465)."""
+    """Test when next node after script is not a macro."""
     # Test various edge cases with scripts.
     result = latex2unicode(r"a_1 b")
     assert "a" in result
@@ -198,21 +209,21 @@ def test_latex2unicode_no_macro_for_script():
 
 
 def test_latex2unicode_reconstruct_macro_with_args():
-    """Test macro reconstruction with arguments (lines 496-499)."""
+    """Test macro reconstruction with arguments."""
     # Test macros with arguments are properly handled.
     result = latex2unicode(r"\sqrt{x}")
     assert "x" in result or "√" in result
 
 
 def test_latex2unicode_reconstruct_nodes():
-    """Test node reconstruction (lines 514-524)."""
+    """Test node reconstruction."""
     # Test complex nested structures.
     result = latex2unicode(r"\sum_{i=1}^{n} \frac{1}{i}")
     assert "∑" in result
 
 
 def test_latex2unicode_unsupported_script_chars():
-    """Test unsupported characters in scripts (lines 592-593)."""
+    """Test unsupported characters in scripts."""
     # Test characters that don't have superscript/subscript equivalents.
     result = latex2unicode(r"x^{ABC}")
     # Should contain some form of the superscript.
@@ -255,7 +266,7 @@ def test_latex2unicode_chars_with_embedded_scripts():
 
 
 def test_latex2unicode_exception_in_ast(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test exception handling in AST parsing (lines 224-226)."""
+    """Test exception handling in AST parsing."""
     monkeypatch.setattr(
         "madcatter.latex._latex_to_unicode_ast",
         Mock(side_effect=RuntimeError("parse failed")),
@@ -264,7 +275,7 @@ def test_latex2unicode_exception_in_ast(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def test_latex2unicode_script_no_conversion():
-    """Test fallback in _try_handle_script_after_chars (line 381)."""
+    """Test fallback in _try_handle_script_after_chars."""
     # Test when script is followed by something other than group/macro
     # This covers the case where _try_handle_script_after_chars returns "", 0.
     result = latex2unicode(r"x^ ")
@@ -272,7 +283,7 @@ def test_latex2unicode_script_no_conversion():
 
 
 def test_latex2unicode_frac_missing_denom():
-    """Test fraction with missing denominator (line 434)."""
+    """Test fraction with missing denominator."""
     # Test \frac with only one argument.
     result = latex2unicode(r"\frac{1}")
     # Should fallback to text conversion.
@@ -280,7 +291,7 @@ def test_latex2unicode_frac_missing_denom():
 
 
 def test_latex2unicode_macro_script_not_chars():
-    """Test macro followed by non-char node (lines 457, 465)."""
+    """Test macro followed by non-char node."""
     # Test when macro is followed by something that's not a char node
     # or when the char is not ^ or _.
     result = latex2unicode(r"\alpha a")
@@ -289,28 +300,28 @@ def test_latex2unicode_macro_script_not_chars():
 
 
 def test_latex2unicode_macro_script_not_group():
-    """Test macro^x where x is not a group (line 465)."""
+    """Test macro^x where x is not a group."""
     # This tests when macro is followed by ^/_ and then non-group.
     result = latex2unicode(r"\alpha^2")
     assert "α" in result or "ᵅ" in result
 
 
 def test_latex2unicode_reconstruct_with_group():
-    """Test node reconstruction with groups (lines 521-523)."""
+    """Test node reconstruction with groups."""
     # Test reconstruction of LatexGroupNode.
     result = latex2unicode(r"\sqrt{{x}}")
     assert result == "√(x)"
 
 
 def test_latex2unicode_reconstruct_with_macro():
-    """Test node reconstruction with macros (lines 519-520)."""
+    """Test node reconstruction with macros."""
     # Test reconstruction of LatexMacroNode within arguments.
     result = latex2unicode(r"\sqrt{\alpha}")
     assert result == "√(α)"
 
 
 def test_latex2unicode_unsupported_subscript():
-    """Test unsupported characters in subscripts (lines 592-593)."""
+    """Test unsupported characters in subscripts."""
     # Test characters without subscript equivalents
     # Most uppercase letters don't have subscript forms.
     result = latex2unicode(r"x_{ABC}")
@@ -319,7 +330,7 @@ def test_latex2unicode_unsupported_subscript():
 
 
 def test_latex2unicode_mixed_supported_unsupported():
-    """Test mixed supported/unsupported in scripts (lines 591-593)."""
+    """Test mixed supported/unsupported in scripts."""
     # Test mixing supported and unsupported characters.
     result = latex2unicode(r"x^{aQ}")
     assert "x" in result
@@ -327,7 +338,7 @@ def test_latex2unicode_mixed_supported_unsupported():
 
 
 def test_latex2unicode_unsupported_then_supported():
-    """Test unsupported followed by supported chars (lines 592-593)."""
+    """Test unsupported followed by supported chars."""
     # This specifically tests the branch where we have unsupported chars,
     # then encounter a supported char, triggering lines 592-593.
     result = latex2unicode(r"x^{Qa}")
@@ -337,7 +348,7 @@ def test_latex2unicode_unsupported_then_supported():
 
 
 def test_latex2unicode_script_at_end_no_nodes():
-    """Test script at end with no following nodes (line 381)."""
+    """Test script at end with no following nodes."""
     # If a char node ends with ^ or _ but there's no next node,
     # _try_handle_script_after_chars should return "", 0
     # This is hard to trigger directly, but try edge cases.
@@ -346,7 +357,7 @@ def test_latex2unicode_script_at_end_no_nodes():
 
 
 def test_latex2unicode_frac_none_args():
-    """Test fraction with None argument nodes (line 434)."""
+    """Test fraction with None argument nodes."""
     # Create a case where numer_node or denom_node could be None
     # This might happen with malformed \frac.
     result = latex2unicode(r"\frac{}{1}")
@@ -354,7 +365,7 @@ def test_latex2unicode_frac_none_args():
 
 
 def test_latex2unicode_macro_not_followed_by_chars():
-    """Test macro not followed by char node (line 457)."""
+    """Test macro not followed by char node."""
     # Test where macro is followed by something other than LatexCharsNode
     # For example, two macros in sequence.
     result = latex2unicode(r"\alpha\beta")
@@ -363,7 +374,7 @@ def test_latex2unicode_macro_not_followed_by_chars():
 
 
 def test_latex2unicode_macro_script_not_group_node():
-    """Test macro^/_ not followed by group (line 465)."""
+    """Test macro^/_ not followed by group."""
     # Macro followed by ^/_ and then something that's not a group
     # This is tricky to create, but some edge cases might work.
     result = latex2unicode(r"\sum^n")
@@ -371,58 +382,46 @@ def test_latex2unicode_macro_script_not_group_node():
 
 
 def test_latex2unicode_script_followed_by_comment():
-    """Test char ending with ^ followed by comment node (line 381)."""
+    """Test char ending with ^ followed by comment node."""
     # This creates a LatexCommentNode which is neither Group nor Macro.
     result = latex2unicode(r"a^% comment")
     assert "a" in result
 
 
 def test_latex2unicode_script_followed_by_environment():
-    """Test char ending with ^ followed by environment (line 381)."""
+    """Test char ending with ^ followed by environment."""
     # This creates a LatexEnvironmentNode which is neither Group nor Macro.
     result = latex2unicode(r"a^\begin{matrix}1\end{matrix}")
     assert "a" in result
 
 
-def test_latex2unicode_frac_with_none_in_argnlist():
-    """Test fraction where argnlist contains None (line 434)."""
-    # This is a defensive check that's hard to trigger naturally
-    # We can test it by directly calling the internal function with a mock node
-    # Create a mock node where argnlist contains None.
-    mock_node = cast(LatexMacroNode, Mock())
-    mock_node.nodeargd = ParsedMacroArgs(
-        argnlist=[None, cast(LatexGroupNode, Mock())],
-    )
-
-    result = _try_convert_fraction(mock_node)
-    assert result == ""
-
-    # Also test with both None.
-    mock_node2 = cast(LatexMacroNode, Mock())
-    mock_node2.nodeargd = ParsedMacroArgs(argnlist=[None, None])
-
-    result2 = _try_convert_fraction(mock_node2)
-    assert result2 == ""
-
-
-@pytest.mark.parametrize("argnlist", [None, [], [LatexGroupNode(nodelist=[])]])
-def test_try_convert_fraction_rejects_missing_or_short_argnlist(
+@pytest.mark.parametrize(
+    ("argnlist", "text"),
+    [
+        (None, "/"),
+        ([], "/"),
+        ([LatexGroupNode(nodelist=[LatexCharsNode(chars="a")])], "a/"),
+        ([None, LatexGroupNode(nodelist=[LatexCharsNode(chars="b")])], "/b"),
+    ],
+)
+def test_try_convert_fraction_renders_missing_parts_empty(
     argnlist: list[LatexGroupNode | None] | None,
+    text: str,
 ) -> None:
-    node = cast(LatexMacroNode, Mock())
-    node.nodeargd = ParsedMacroArgs(argnlist=argnlist)
-    assert _try_convert_fraction(node) == ""
+    node = LatexMacroNode(macroname="frac")
+    node.nodeargd = None if argnlist is None else ParsedMacroArgs(argnlist=argnlist)
+    assert _try_convert_fraction(node) == text
 
 
 def test_latex2unicode_macro_followed_by_environment():
-    """Test macro followed by environment node (line 457)."""
+    """Test macro followed by environment node."""
     # Macro followed by environment (not chars node)
     result = latex2unicode(r"\alpha\begin{matrix}1\end{matrix}")
     assert "α" in result
 
 
 def test_latex2unicode_macro_followed_by_group():
-    """Test macro followed by group node (line 457)."""
+    """Test macro followed by group node."""
     # Macro followed by group (not chars node), with at least 3 nodes
     # This hits the check at line 457 where next_node is not LatexCharsNode
     # Need at least 3 nodes to get past the check at line 452.
@@ -630,6 +629,44 @@ def test_try_handle_script_after_macro_covers_subscript_and_rejections():
     assert latex._try_handle_script_after_macro("α", nodes, 0) == ("", 0)
     nodes, _, _ = latexwalker.LatexWalker(r"\alpha^").get_latex_nodes()
     assert latex._try_handle_script_after_macro("α", nodes, 0) == ("", 0)
+
+
+def test_latex2unicode_reuses_default_latex_contexts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    latex2unicode(r"x_i^2 + \alpha^{ab} + \frac{1}{2}")
+    builds: list[str] = []
+    monkeypatch.setattr(
+        latexwalker,
+        "get_default_latex_context_db",
+        functools.partial(
+            _record_build,
+            "latexwalker",
+            latexwalker.get_default_latex_context_db,
+            builds,
+        ),
+    )
+    monkeypatch.setattr(
+        latex2text,
+        "get_default_latex_context_db",
+        functools.partial(
+            _record_build,
+            "latex2text",
+            latex2text.get_default_latex_context_db,
+            builds,
+        ),
+    )
+    assert latex2unicode(r"x_i^2 + \alpha^{ab} + \frac{1}{2}") == "xᵢ² + αᵃᵇ + ½"
+    assert builds == []
+
+
+def _record_build(
+    name: str,
+    build: Callable[[], LatexContextDb],
+    builds: list[str],
+) -> LatexContextDb:
+    builds.append(name)
+    return build()
 
 
 def test_latex2unicode_delimiters_require_both_sides():

@@ -30,7 +30,7 @@ jobs:
 
       - name: Validate built package
         run: |
-          uv run python -c "import madcatter; print(madcatter.__file__)"
+          wheels=(dist/madcatter-*.whl); wheel="${wheels[0]}"; uv run --isolated --with "$wheel" python -P -c "import madcatter; print(madcatter.__file__)"
 
       - name: Publish package
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2

@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, override
 
 import argparse
 import collections
+import functools
+import io
 import os
 import pydoc
 import sys
@@ -30,7 +32,7 @@ from madcatter.mdcat import (
 
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
 
 
 @pytest.fixture(autouse=True)
@@ -137,30 +139,267 @@ def test_to_ascii_and_strip_trailing_whitespace() -> None:
     assert mdcat.strip_trailing_whitespace("a  \nb\t") == "a\nb"
 
 
-def test_extract_headings_and_links(monkeypatch: pytest.MonkeyPatch) -> None:
-    body = "# One\n## Two"
-    assert extract_headings(body) == [(1, "One"), (2, "Two")]
+def test_extract_headings_reads_levels() -> None:
+    assert extract_headings("# One\n## Two") == [(1, "One"), (2, "Two")]
 
-    class _Token:
-        def __init__(self, token_type: str, href: str) -> None:
-            self.type = token_type
-            self._href = href
 
-        def attr_get(self, name: str) -> str | None:
-            return self._href if name in ("href", "src") else None
+def test_extract_links_finds_links_and_images_inside_blocks() -> None:
+    body = (
+        "See [docs](https://x.y) and ![i](p.png).\n\n"
+        "- [nested](n)\n\n"
+        "> [quoted](q)\n\n"
+        "[empty]() ![blank]()\n"
+    )
+    assert mdcat.extract_links(body) == ["https://x.y", "p.png", "n", "q"]
 
-    type.__setattr__(_Token, "attrGet", _Token.attr_get)
 
-    class _Markdown:
-        def parse(self, text: str) -> list[_Token]:
-            del text
-            return [
-                _Token("link_open", "https://example.com"),
-                _Token("image", "/img.png"),
-            ]
+def test_filter_section_ignores_headings_inside_code() -> None:
+    body = (
+        "# Setup\n\n```bash\n# install\npip x\n```\n\n    # indented\n\nafter\n# Next\n"
+    )
+    assert mdcat.filter_section(body, "Setup") == (
+        "# Setup\n\n```bash\n# install\npip x\n```\n\n    # indented\n\nafter"
+    )
+    assert mdcat.filter_section(body, "install") == ""
 
-    monkeypatch.setattr(mdcat, "MarkdownIt", _Markdown)
-    assert mdcat.extract_links(body) == ["https://example.com", "/img.png"]
+
+def test_process_emoji_leaves_inline_code_alone() -> None:
+    text = "Type `:rocket:` for :rocket:\n```\n:fire:\n```\n    :heart:"
+    assert (
+        process_emoji(text) == "Type `:rocket:` for 🚀\n```\n:fire:\n```\n    :heart:"
+    )
+
+
+def test_process_emoji_uses_the_line_scan_not_the_block_parser(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A cheap line scan, by choice: a block parse costs 0.3 s on 2 MB.
+
+    So a tab-indented code line expands, and a 4-space nested list item does not.
+    """
+    parses: list[str] = []
+    real = markdown.code_lines
+
+    def counting(text: str) -> list[bool]:
+        parses.append(text)
+        return real(text)
+
+    monkeypatch.setattr(markdown, "code_lines", counting)
+    monkeypatch.setattr(mdcat, "code_lines", counting)
+    text = "x[::-1,:] :facepalm:\n\n\t:fire:\n- a\n    - :wave:\n" * 500
+    assert process_emoji(text) == "x[::-1,:] 🤦\n\n\t🔥\n- a\n    - :wave:\n" * 500
+    assert parses == []
+
+
+def test_main_reports_stdin_and_write_failures_without_a_traceback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    doc = tmp_path / "a.md"
+    doc.write_text("# T\n")
+    locked = tmp_path / "locked.md"
+    locked.write_text("# L\n")
+    locked.chmod(0o444)
+    missing_dir = tmp_path / "no" / "out.html"
+    cases = [
+        (["-"], "-", "'utf-8' codec can't decode"),
+        (
+            ["--export-html", str(missing_dir), str(doc)],
+            str(missing_dir),
+            "No such file",
+        ),
+        (["-i", str(locked)], str(locked), "Permission denied"),
+        (
+            ["--export-ansi", str(missing_dir), str(doc)],
+            str(missing_dir),
+            "No such file",
+        ),
+    ]
+    for args, name, reason in cases:
+        stdin = io.TextIOWrapper(io.BytesIO(b"\xff"), encoding="utf-8")
+        monkeypatch.setattr(sys, "stdin", stdin)
+        monkeypatch.setattr(sys, "argv", ["mdcat", *args])
+        with pytest.raises(SystemExit) as exc:
+            mdcat.main()
+        assert exc.value.code == 1
+        err = capsys.readouterr().err
+        assert err.startswith(f"mdcat: {name}: {reason}"), err
+        assert err.count("\n") == 1
+
+
+def _mtime_one(path: str) -> float:
+    del path
+    return 1.0
+
+
+def _next_mtime(mtimes: Iterator[float | None], path: str) -> float | None:
+    del path
+    return next(mtimes)
+
+
+def _absent(path: str) -> None:
+    del path
+
+
+def _discard(text: str) -> None:
+    del text
+
+
+def _render_nothing(path: str, console: Console, flags: mdcat._Flags) -> str:
+    del path, console, flags
+    return ""
+
+
+def test_watch_keeps_watching_when_the_file_vanishes_before_the_read(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    flags, _ = mdcat._parse_args(argparse.ArgumentParser(), [])
+    console = Console(file=StringIO(), force_terminal=False, record=True, width=500)
+    monkeypatch.setattr(mdcat, "_mtime_or_none", _mtime_one)
+
+    def stop(delay: float) -> None:
+        del delay
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(time, "sleep", stop)
+    gone = tmp_path / "gone.md"
+    mdcat.watch_file(str(gone), mdcat.render_markdown_file, console, flags)
+    output = console.export_text()
+    assert f"File {gone} not found" in output
+    assert "Stopped watching" in output
+
+
+def test_watch_reports_a_missing_file_once_per_disappearance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    flags, _ = mdcat._parse_args(argparse.ArgumentParser(), [])
+    console = Console(file=StringIO(), force_terminal=False, record=True)
+    mtimes = iter([None, None, None, 1.0, 1.0, 1.0])
+    monkeypatch.setattr(mdcat, "_mtime_or_none", functools.partial(_next_mtime, mtimes))
+    sleeps = 0
+
+    def sleep(delay: float) -> None:
+        del delay
+        nonlocal sleeps
+        sleeps += 1
+        if sleeps == 6:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(time, "sleep", sleep)
+    mdcat.watch_file("x.md", _render_nothing, console, flags)
+    assert console.export_text().count("File x.md not found") == 1
+
+
+def test_rewritten_reads_the_file_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    doc = tmp_path / "a.md"
+    doc.write_text("# T\n")
+    reads: list[str] = []
+    read = mdcat._read
+
+    def counting(path: str) -> str:
+        reads.append(path)
+        return read(path)
+
+    monkeypatch.setattr(mdcat, "_read", counting)
+    flags, _ = mdcat._parse_args(argparse.ArgumentParser(), ["-i", "-w", "40"])
+    mdcat.rewritten(str(doc), flags)
+    assert reads == [str(doc)]
+
+
+def test_parse_args_hyperlinks_can_be_turned_off() -> None:
+    parser = argparse.ArgumentParser()
+    assert mdcat._parse_args(parser, [])[0].hyperlinks is True
+    flags, _ = mdcat._parse_args(argparse.ArgumentParser(), ["--no-hyperlinks"])
+    assert flags.hyperlinks is False
+
+
+def test_style_profiles_hold_only_settings_mdcat_applies() -> None:
+    assert {key for profile in mdcat.STYLE_PROFILES.values() for key in profile} == {
+        "code_theme",
+    }
+
+
+def test_main_rejects_paging_an_ansi_export(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    doc = tmp_path / "a.md"
+    doc.write_text("# T\n")
+    ansi = tmp_path / "out.ansi"
+    monkeypatch.setattr(pydoc, "pager", _discard)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["mdcat", "--page", "--export-ansi", str(ansi), str(doc)],
+    )
+    with pytest.raises(SystemExit) as exc:
+        mdcat._main()
+    assert exc.value.code == 2
+    assert "--page cannot be combined with --export-ansi" in capsys.readouterr().err
+    assert not ansi.exists()
+
+
+_MARKUP = "[/x] [red]r[/red]"
+
+
+def test_rendered_user_text_is_shown_literally_not_read_as_markup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    console = Console(file=StringIO(), force_terminal=False, record=True, width=300)
+    mdcat.render_toc([(1, _MARKUP)], console)
+    mdcat.render_code_blocks([(_MARKUP, "a")], console)
+    mdcat.check_links([_MARKUP], console)
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.write_text(f"{_MARKUP}\n")
+    second.write_text("b\n")
+    mdcat.render_diff(str(first), str(second), console)
+
+    def stop(delay: float) -> None:
+        del delay
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(time, "sleep", stop)
+    monkeypatch.setattr(mdcat, "_read_or_none", _absent)
+    monkeypatch.setattr(mdcat, "_mtime_or_none", _absent)
+    flags, _ = mdcat._parse_args(argparse.ArgumentParser(), [])
+    mdcat.follow_file(_MARKUP, console, flags)
+    mdcat.watch_file(_MARKUP, mdcat.render_markdown_file, console, flags)
+    assert console.export_text().count(_MARKUP) == 7
+
+
+def test_main_messages_show_names_literally_not_as_markup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    folder = tmp_path / "w["
+    folder.mkdir()
+    doc = folder / "x].md"
+    doc.write_text("# A\n")
+    html = folder / "o].html"
+    ansi = folder / "a].ansi"
+    for args in (
+        ["--section", _MARKUP],
+        ["--export-html", str(html), "--export-ansi", str(ansi)],
+    ):
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["mdcat", "--no-color", "-w", "300", *args, str(doc)],
+        )
+        assert mdcat._main() == 0
+    out = capsys.readouterr().out
+    assert f"Section '{_MARKUP}' not found" in out
+    assert f"Exported HTML to {html}" in out
+    assert f"Exported ANSI to {ansi}" in out
 
 
 def test_extract_code_blocks_and_filter() -> None:
@@ -433,36 +672,6 @@ class TestOwnedParsing:
         assert mdcat.extract_headings("#no\n#### yes\n####### too deep") == [
             (4, "yes"),
         ]
-
-    def test_extract_links_rejects_empty_and_nonstring_attributes(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        class Token:
-            def __init__(self, token_type: str, value: object) -> None:
-                self.type = token_type
-                self.value = value
-
-            def attr_get(self, name: str) -> object:
-                del name
-                return self.value
-
-        type.__setattr__(Token, "attrGet", Token.attr_get)
-
-        class Parser:
-            def parse(self, text: str) -> list[Token]:
-                del text
-                return [
-                    Token("link_open", ""),
-                    Token("link_open", 4),
-                    Token("image", ""),
-                    Token("image", 5),
-                    Token("link_open", "ok"),
-                    Token("image", "pic"),
-                ]
-
-        monkeypatch.setattr(mdcat, "MarkdownIt", Parser)
-        assert mdcat.extract_links("ignored") == ["ok", "pic"]
 
     def test_extract_code_blocks_handles_empty_info_and_filters_exactly(
         self,
@@ -1107,22 +1316,16 @@ class TestMadcatterMainB2:
         mdcat._render_line(Console(file=StringIO()), default_flags, "plain")
         assert captured[-1][1]["justify"] == "left"
 
-    def test_export_html_uses_renderer(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        class FakeMarkdownIt:
-            def render(self, body: str) -> str:
-                assert body == "source"
-                return "<p>rendered</p>"
-
-        monkeypatch.setattr(mdcat, "MarkdownIt", FakeMarkdownIt)
+    def test_export_html_escapes_raw_html_in_the_source(self, tmp_path: Path) -> None:
         output = tmp_path / "x.html"
-        mdcat.export_html("source", str(output))
+        mdcat.export_html(
+            '<script>alert(1)</script>\n\nhi <img src=x onerror="alert(2)">\n',
+            str(output),
+        )
         text = output.read_text()
-        assert "<p>rendered</p>" in text
-        assert "source" not in text
+        assert "<script>alert" not in text
+        assert "<img src=x" not in text
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in text
 
 
 class TestOwnedLinkRequestContract:
@@ -2165,6 +2368,10 @@ class TestOwnedFenceParity:
         assert mdcat.extract_headings(body) == []
 
 
+def _write_invalid_utf8(path: Path) -> None:
+    path.write_bytes(b"\xff")
+
+
 class TestOwnedMutationExactC:
     def test_main_titles_terminal_with_file_names_even_when_piped(
         self,
@@ -2265,10 +2472,40 @@ class TestOwnedMutationExactC:
         missing = tmp_path / "missing.md"
         monkeypatch.setattr(sys, "argv", ["mdcat", "-i", str(doc), str(missing)])
         with pytest.raises(SystemExit) as exc:
-            mdcat._main()
+            mdcat.main()
         assert exc.value.code == 1
         assert capsys.readouterr().err.startswith(f"mdcat: {missing}: ")
         assert doc.read_text() == "# T\n"
+
+    @pytest.mark.parametrize(
+        ("args", "make", "reason"),
+        [
+            ([], None, "No such file or directory"),
+            (["--diff", "other.md"], None, "No such file or directory"),
+            ([], Path.mkdir, "Is a directory"),
+            ([], _write_invalid_utf8, "'utf-8' codec can't decode"),
+        ],
+    )
+    def test_main_reports_an_unreadable_path_without_a_traceback(
+        self,
+        *,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        args: list[str],
+        make: Callable[[Path], object] | None,
+        reason: str,
+    ) -> None:
+        path = tmp_path / "aa"
+        if make is not None:
+            make(path)
+        monkeypatch.setattr(sys, "argv", ["mdcat", *args, str(path)])
+        with pytest.raises(SystemExit) as exc:
+            mdcat.main()
+        assert exc.value.code == 1
+        err = capsys.readouterr().err
+        assert err.startswith(f"mdcat: {path}: {reason}")
+        assert err.count("\n") == 1
 
     @pytest.mark.parametrize("args", [[], ["--page"]])
     def test_main_display_output_carries_no_hidden_source(
@@ -2886,7 +3123,8 @@ class TestOwnedMutationExactG:
         console = Console(file=StringIO(), force_terminal=False)
         calls: list[tuple[str, object]] = []
 
-        def record(text: str, *, style: object) -> None:
+        def record(text: str, *, style: object, markup: bool) -> None:
+            assert markup is False
             calls.append((text, style))
 
         monkeypatch.setattr(console, "print", record)

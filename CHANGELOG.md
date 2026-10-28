@@ -24,6 +24,31 @@ All notable madcatter changes are documented here. This project follows
 - Ordered lists render as `1.`, and a list item's paragraphs stay separated.
 - `--export-ansi` writes the render; it wrote an empty file.
 - `--diff` and `--follow` read a rendered file as its markdown.
+- `--hyperlinks` can be turned off with `--no-hyperlinks`.
+- `--page` with `--export-ansi` is an error; the export was empty.
+- Style profiles hold only the code theme; the unused `background` is gone.
+
+### Fixed
+
+- `--links` and `--check-links` find links; they found none in any file.
+- Math is never read across or inside code: `$5 and \`x\` then $10` no longer
+  garbles the code span, and `$$` around a fenced block leaves the block as is.
+  Code blocks follow CommonMark, so math in a nested list item converts and
+  tab-indented code stays literal.
+- `:shortcode:` emoji stay literal inside inline code and indented code.
+- `--section` ignores `#` lines inside code blocks.
+- Headings, section names, code languages, link URLs, and file paths that
+  contain Rich markup such as `[/x]` are shown as written; they crashed or
+  restyled the output.
+- `--export-html` shows raw HTML in the source as text instead of emitting it.
+- An unreadable or unwritable file, a non-UTF-8 stdin, or a failed export
+  ends with `mdcat: <path>: <reason>` and exit 1, not a traceback.
+- `--watch` keeps watching when the file vanishes mid-read, and reports a
+  missing file once instead of every second.
+- 84 gendered emoji, such as `biking_man`, join with U+200D and render as one
+  glyph.
+- `\frac` with a missing part renders it empty; `\frac{}` rendered `%s/%s`.
+- Rendering a large file is faster: 10.7 s to under 2 s on a 1.9 MB file.
 
 ### Removed
 
