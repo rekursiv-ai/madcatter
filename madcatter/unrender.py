@@ -369,7 +369,7 @@ def _line(spans: list[_Span], *, lists: list[tuple[int, int]]) -> str:
     if not plain[pos:].strip():
         return quote.rstrip()
     lead, rest = _list_prefix(spans, plain=plain, pos=pos, lists=lists)
-    drop = frozenset({"fg35"}) if quotes else frozenset()
+    drop = frozenset({"fg35"}) if quotes else frozenset[str]()
     if not (quotes or lists):
         level, drop = _heading(rest)
         lead = "#" * level + " " if level else lead
