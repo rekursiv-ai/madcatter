@@ -425,7 +425,7 @@ wheels = [
 
 [[package]]
 name = "madcatter"
-version = "0.1.6"
+version = "0.1.7"
 source = { editable = "." }
 dependencies = [
     { name = "markdown-it-py" },
@@ -871,7 +871,7 @@ wheels = [
 [[package]]
 name = "rekursiv-ai-typings"
 version = "0.1.12"
-source = { git = "https://github.com/rekursiv-ai/typings?branch=main#6a6317c71a16fc203562bd83fac0c555677803fa" }
+source = { git = "https://github.com/rekursiv-ai/typings?branch=main#01404054d9b4f20ea5f59c587382766cf1f21ac4" }
 
 [[package]]
 name = "requests"

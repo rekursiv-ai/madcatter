@@ -3,7 +3,7 @@
 
 [project]
 name = "madcatter"
-version = "0.1.6"
+version = "0.1.7"
 description = "Rich-based Markdown console renderer (mdcat) with emoji, LaTeX math, and preprocessing helpers."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -62,7 +62,7 @@ typecheck = [
     "basedpyright>=1.40.1",
     "pyrefly>=1.4.0",
     "ty>=0.0.84",
-    "rekursiv-ai-typings>=0.1.11",
+    "rekursiv-ai-typings>=0.1.12",
     "types-requests>=2.28",
 ]
 "pre-commit" = [
