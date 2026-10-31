@@ -11,22 +11,10 @@ Rich-based Markdown console renderer (mdcat) and helpers.
 ## Quick Start
 
 ```bash
-# Mac:
-#   # Required for quick install.
-#   brew install uv
-
-# Ubuntu/Debian:
-#   # Required for quick install.
-#   sudo apt-get install -y curl
-#   curl -LsSf https://astral.sh/uv/install.sh | sh
-
-uv tool install madcatter
-
-mdcat README.md
-
-# As a library dependency: uv add madcatter
-# Alternatively: python -m pip install madcatter
+uvx madcatter@latest README.md
 ```
+
+See [Install](#install) for additional details.
 
 ## Example
 
@@ -52,7 +40,7 @@ terminal. It exists because `cat`-ing a Markdown file dumps raw `#`/`**`/`` ``` 
 "pretty cat" tools stop at syntax highlighting: `madcatter` also expands `:shortcode:` emoji,
 converts LaTeX math to Unicode, extracts a table of contents or a single section, validates links,
 diffs two documents, and can tail a growing file the way `tail -F` tails a log. The package is
-called `madcatter`; it installs a CLI called `mdcat`.
+called `madcatter`; it installs a CLI called `mdcat`, also runnable as `madcatter`.
 
 The same file ([`docs/assets/sample.md`](https://raw.githubusercontent.com/rekursiv-ai/madcatter/main/docs/assets/sample.md)), dumped raw with `cat` (left)
 and rendered by `mdcat` (right): an emoji shortcode, `$...$` math, a highlighted code block, and
@@ -72,6 +60,34 @@ a table.
 - ASCII-only, HTML, and ANSI export.
 - In-place rendering (`-i`) and `--unrender`, which reads rendered output back into markdown.
 - YAML frontmatter stripping.
+
+## Install
+
+```bash
+uv tool install madcatter && mdcat README.md
+# Later: uv tool upgrade madcatter
+```
+
+If you're missing `uvx`/`uv`,
+- Mac
+  ```bash
+  brew install uv
+  ```
+- Linux
+  ```bash
+  sudo apt install -y curl
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  ```
+
+To add madcatter to your own project as a library,
+```bash
+uv add madcatter
+```
+
+Or with pip,
+```bash
+python -m pip install madcatter
+```
 
 ## Usage cookbook
 
