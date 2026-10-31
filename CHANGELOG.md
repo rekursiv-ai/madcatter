@@ -14,6 +14,8 @@ All notable madcatter changes are documented here. This project follows
   comes back byte for byte while its shown text is unedited; other output is
   read back from what it shows.
 - `mdcat` sets the terminal title to the file names.
+- `madcatter` runs the same CLI as `mdcat`, so `uvx madcatter` needs no
+  `--from`.
 
 ### Changed
 

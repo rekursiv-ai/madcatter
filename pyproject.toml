@@ -36,6 +36,8 @@ dependencies = [
 
 [project.scripts]
 mdcat = "madcatter.mdcat:main"
+# Lets `uvx madcatter` run without `--from`; PyPI's `mdcat` is another project.
+madcatter = "madcatter.mdcat:main"
 
 [dependency-groups]
 # NEVER ADD MORE DEPENDENCIES!
