@@ -2600,16 +2600,60 @@ class TestOwnedMutationExactC:
     @pytest.mark.parametrize(
         ("args", "message"),
         [
-            (["-i", "--page", "x"], "--in-place and --unrender cannot be combined"),
-            (["--unrender", "--watch", "x"], "--in-place and --unrender cannot be"),
-            (["-i", "--follow", "x"], "--in-place and --unrender cannot be combined"),
-            (["-i", "--diff", "y", "x"], "--in-place and --unrender cannot be"),
+            (
+                ["-i", "--page", "x"],
+                "--in-place and --unrender cannot be combined with --page",
+            ),
+            (
+                ["--unrender", "--watch", "x"],
+                "--in-place and --unrender cannot be combined with --watch",
+            ),
+            (
+                ["-i", "--follow", "x"],
+                "--in-place and --unrender cannot be combined with --follow",
+            ),
+            (
+                ["-i", "--diff", "y", "x"],
+                "--in-place and --unrender cannot be combined with --diff",
+            ),
             (["-i"], "--in-place requires file paths, not stdin"),
             (["-i", "-"], "--in-place requires file paths, not stdin"),
-            (["--unrender", "--section", "s"], "--in-place and --unrender cannot be"),
-            (["--unrender", "--toc"], "--in-place and --unrender cannot be combined"),
-            (["--unrender", "--export-html", "h"], "--in-place and --unrender cannot"),
-            (["--unrender", "--no-frontmatter"], "--unrender cannot be combined"),
+            (
+                ["--unrender", "--section", "s"],
+                "--in-place and --unrender cannot be combined with --section",
+            ),
+            (
+                ["--unrender", "--toc"],
+                "--in-place and --unrender cannot be combined with --toc",
+            ),
+            (
+                ["--unrender", "--links"],
+                "--in-place and --unrender cannot be combined with --links",
+            ),
+            (
+                ["--unrender", "--check-links"],
+                "--in-place and --unrender cannot be combined with --check-links",
+            ),
+            (
+                ["--unrender", "--code-only"],
+                "--in-place and --unrender cannot be combined with --code-only",
+            ),
+            (
+                ["--unrender", "--export-html", "h"],
+                "--in-place and --unrender cannot be combined with --export-html",
+            ),
+            (
+                ["--unrender", "--export-ansi", "h"],
+                "--in-place and --unrender cannot be combined with --export-ansi",
+            ),
+            (
+                ["--unrender", "--no-frontmatter"],
+                "--in-place and --unrender cannot be combined with --no-frontmatter",
+            ),
+            (
+                ["--page", "--export-ansi", "h"],
+                "--page cannot be combined with --export-ansi",
+            ),
         ],
     )
     def test_main_rejects_in_place_and_unrender_misuse(
@@ -2622,7 +2666,7 @@ class TestOwnedMutationExactC:
         monkeypatch.setattr(sys, "argv", ["mdcat", *args])
         with pytest.raises(SystemExit):
             mdcat._main()
-        assert message in capsys.readouterr().err
+        assert capsys.readouterr().err.endswith(f"error: {message}\n")
 
     @pytest.mark.parametrize(
         "mode",
@@ -3340,6 +3384,210 @@ class TestOwnedMutationExactH:
         )
         mdcat.render_markdown_file(str(source), Console(file=StringIO()), flags)
         assert values[0]["inline_code_lexer"] == "python"
+
+
+_PLAIN = mdcat.Layout(width=40, justify=False, math=True, frontmatter=True)
+
+
+class TestRenderPlainAndRoundTrips:
+    def test_render_plain_applies_each_layout_setting(self) -> None:
+        source = (
+            "---\nt: x\n---\nA paragraph long enough to wrap at forty cols. $x^2$\n"
+        )
+        plain = mdcat.render_plain(source, _PLAIN)
+        justified = mdcat.render_plain(
+            source,
+            mdcat.Layout(width=40, justify=True, math=True, frontmatter=True),
+        )
+        stripped = mdcat.render_plain(
+            source,
+            mdcat.Layout(width=40, justify=False, math=True, frontmatter=False),
+        )
+        literal = mdcat.render_plain(
+            source,
+            mdcat.Layout(width=40, justify=False, math=False, frontmatter=True),
+        )
+
+        assert plain.split("\n")[0] == "t: x"
+        assert justified.split("\n")[2] == "A paragraph long enough to wrap  at"
+        assert plain.split("\n")[2] == "A paragraph long enough to wrap at"
+        assert "t: x" not in stripped
+        assert "x²" in plain
+        assert "$x^2$" in literal
+
+    def test_render_plain_writes_no_codes_even_when_color_is_forced(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("FORCE_COLOR", "1")
+        assert "\x1b" not in mdcat.render_plain("# **T**\n", _PLAIN)
+
+    def test_a_numbered_item_opens_on_its_first_paragraph(self) -> None:
+        assert (
+            mdcat.render_plain("1. one\n\n   two\n", _PLAIN) == " 1. one\n\n    two\n"
+        )
+
+    def test_prepare_reads_every_line_ending_as_a_newline(self) -> None:
+        body = mdcat._prepare("a\r\nb\rc\n", frontmatter=True, math=True)
+        assert body == "a\nb\nc\n"
+
+    def test_read_keeps_line_endings_and_write_writes_them_back(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        path = tmp_path / "doc.md"
+        path.write_bytes("é\r\nb\rc\n".encode())
+
+        text = mdcat._read(str(path))
+        mdcat._write(str(path), text)
+
+        assert text == "é\r\nb\rc\n"
+        assert path.read_bytes() == "é\r\nb\rc\n".encode()
+
+    def test_a_rendered_file_renders_and_diffs_as_its_source(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        source = tmp_path / "doc.md"
+        source.write_text("# T\n\nbody\n")
+        flags, _ = mdcat._parse_args(argparse.ArgumentParser(), ["-i", "-w", "40"])
+        rendered = tmp_path / "rendered.md"
+        rendered.write_text(mdcat.rewritten(str(source), flags))
+
+        assert mdcat.render_markdown_file(
+            str(rendered),
+            Console(file=StringIO()),
+            flags,
+        ) == mdcat.render_markdown_file(str(source), Console(file=StringIO()), flags)
+        console = Console(file=StringIO(), record=True, width=200)
+        mdcat.render_diff(str(rendered), str(source), console)
+        assert console.export_text() == ""
+
+    def test_in_place_records_the_default_layout(self, tmp_path: Path) -> None:
+        source = tmp_path / "doc.md"
+        source.write_text("x\n")
+        flags, _ = mdcat._parse_args(argparse.ArgumentParser(), ["-i"])
+        flags.width = 80
+
+        assert "mdcat-source:w=80:j=0:m=1:f=1;" in mdcat.rewritten(str(source), flags)
+
+    def test_main_in_place_defaults_to_eighty_columns(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        doc = tmp_path / "doc.md"
+        doc.write_text("x\n")
+        monkeypatch.setattr(sys, "argv", ["mdcat", "-i", str(doc)])
+
+        assert mdcat._main() == 0
+        assert "mdcat-source:w=80:" in doc.read_text()
+
+    def test_export_ansi_keeps_unicode_without_ascii(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        doc = tmp_path / "doc.md"
+        doc.write_text("- a\n")
+        ansi = tmp_path / "out.ansi"
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["mdcat", "--export-ansi", str(ansi), str(doc)],
+        )
+
+        assert mdcat._main() == 0
+        assert "•" in capsys.readouterr().out
+
+    def test_parse_args_defaults_every_text_flag_to_empty(self) -> None:
+        flags, _ = mdcat._parse_args(argparse.ArgumentParser(), [])
+
+        texts = (
+            flags.code_lang,
+            flags.style,
+            flags.export_html,
+            flags.export_ansi,
+            flags.section,
+            flags.diff,
+        )
+        assert texts == ("", "", "", "", "", "")
+        assert flags.color is True
+
+    @pytest.mark.parametrize(
+        ("args", "color"),
+        [
+            (["-c"], True),
+            (["--color"], True),
+            (["--no-color"], False),
+            (["--no-c"], False),
+        ],
+    )
+    def test_parse_args_reads_color_flags(
+        self,
+        args: list[str],
+        *,
+        color: bool,
+    ) -> None:
+        flags, remaining = mdcat._parse_args(argparse.ArgumentParser(), args)
+
+        assert (flags.color, remaining) == (color, [])
+
+    def test_set_terminal_title_writes_to_the_controlling_terminal(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        opened: list[str] = []
+
+        class Refusing:
+            def __init__(self, path: str) -> None:
+                opened.append(path)
+
+            def open(self, mode: str, *, encoding: str) -> TextIOBase:
+                del mode, encoding
+                raise OSError
+
+        monkeypatch.setattr(mdcat, "Path", Refusing)
+        set_terminal_title("doc.md")
+
+        assert opened == ["/dev/tty"]
+
+    def test_watch_renders_again_after_a_failed_read(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        flags, _ = mdcat._parse_args(argparse.ArgumentParser(), [])
+        console = Console(file=StringIO(), force_terminal=False, record=True)
+        # The failed read leaves no mtime seen, so 1.0 next counts as a change.
+        mtimes = iter([5.0, 1.0])
+        monkeypatch.setattr(
+            mdcat,
+            "_mtime_or_none",
+            functools.partial(_next_mtime, mtimes),
+        )
+        renders: list[str] = []
+
+        def render(path: str, console: Console, flags: mdcat._Flags) -> str:
+            del console, flags
+            renders.append(path)
+            if len(renders) == 1:
+                raise mdcat._UserError(path, OSError(2, "gone"))
+            return ""
+
+        sleeps = 0
+
+        def sleep(delay: float) -> None:
+            del delay
+            nonlocal sleeps
+            sleeps += 1
+            if sleeps == 2:
+                raise KeyboardInterrupt
+
+        monkeypatch.setattr(time, "sleep", sleep)
+        mdcat.watch_file("x.md", render, console, flags)
+
+        assert renders == ["x.md", "x.md"]
 
 
 if __name__ == "__main__":

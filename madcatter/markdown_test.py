@@ -199,6 +199,16 @@ def test_process_math_blocks_never_reads_math_across_or_inside_code(text: str):
         ("\\`a` `b`", [("\\`a", False), ("` `", True), ("b`", False)]),
         ("`a\n\nb`", [("`a\n\nb`", False)]),
         ("x```", [("x```", False)]),
+        # A longer run that ends the text does not close a shorter opener.
+        ("`a ``", [("`a ``", False)]),
+        ("`a`", [("`a`", True)]),
+        # Only the paragraph holding the opener bounds its span.
+        ("a\n\nb `c` d", [("a\n\nb ", False), ("`c`", True), (" d", False)]),
+        ("`a\n\nb` c\n\nd", [("`a\n\nb` c\n\nd", False)]),
+        # An even run of backslashes escapes nothing; an odd one escapes the opener.
+        ("\\\\`a`", [("\\\\", False), ("`a`", True)]),
+        ("\\\\\\`a`", [("\\\\\\`a`", False)]),
+        ("\\`a`\\", [("\\`a`\\", False)]),
     ],
 )
 def test_split_code_spans_follows_commonmark_runs(

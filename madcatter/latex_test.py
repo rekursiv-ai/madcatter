@@ -170,6 +170,11 @@ def test_latex2unicode_no_macro_after_script():
     assert result == "x^ 2"
 
 
+def test_a_custom_symbol_keeps_what_follows_it() -> None:
+    # A control word eats the space after it, as in TeX.
+    assert latex2unicode(r"a \implies b") == "a ⟹b"
+
+
 def test_latex2unicode_custom_symbols():
     """Test custom symbols from _EXTRA_SYMBOLS."""
     # Test implies symbol.
@@ -438,7 +443,7 @@ def test_latex2unicode_macro_caret_environment():
 
 
 def test_convert_to_script_preserves_unsupported_runs_exactly():
-    assert latex._convert_to_script("QZaQ", {"a": "ᵃ"}, "⁽", "⁾") == "⁽QZ⁾ᵃ⁽Q⁾"
+    assert latex._convert_to_script("QZaQY", {"a": "ᵃ"}, "⁽", "⁾") == "⁽QZ⁾ᵃ⁽QY⁾"
 
 
 def test_convert_to_script_handles_only_supported_content():

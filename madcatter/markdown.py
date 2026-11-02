@@ -81,9 +81,12 @@ def normalize_bullets(text: str) -> str:
 
     """
     lines = text.split("\n")
+    # pragma: no mutate start -- one fence flag per line, so ``strict`` never fires.
+    flagged = zip(lines, inside_fence(lines), strict=True)
+    # pragma: no mutate end
     return "\n".join(
         line if fenced else re.sub(r"^(\s*)•(?=\s)", r"\1-", line)
-        for line, fenced in zip(lines, inside_fence(lines), strict=True)
+        for line, fenced in flagged
     )
 
 
@@ -129,10 +132,10 @@ def map_prose(markdown_body: str, convert: Callable[[str], str]) -> str:
     """
     lines = markdown_body.split("\n")
     out: list[str] = []
-    for in_code, group in itertools.groupby(
-        zip(lines, code_lines(markdown_body), strict=True),
-        key=lambda pair: pair[1],
-    ):
+    # pragma: no mutate start -- one code flag per line, so ``strict`` never fires.
+    flagged = zip(lines, code_lines(markdown_body), strict=True)
+    # pragma: no mutate end
+    for in_code, group in itertools.groupby(flagged, key=lambda pair: pair[1]):
         chunk = "\n".join(line for line, _ in group)
         out.append(
             chunk
@@ -187,11 +190,13 @@ def split_code_spans(text: str) -> list[tuple[str, bool]]:
         while run_end < len(text) and text[run_end] == "`":
             run_end += 1
         pos = run_end
-        if run_end > limit:
+        # Searched from ``run_end``, which is at least 1, a paragraph's end found
+        # again at the boundary is the same one, and ``blank`` is never 0.
+        if run_end > limit:  # pragma: no mutate -- see above.
             blank = text.find("\n\n", run_end)
-            limit = len(text) if blank < 0 else blank
+            limit = len(text) if blank < 0 else blank  # pragma: no mutate -- see above.
         close = _closing_run(text, run_end, run_end - opener, limit)
-        if close < 0 or _escaped(text, opener):
+        if close is None or _escaped(text, opener):
             continue
         if opener > start:
             pieces.append((text[start:opener], False))
@@ -221,16 +226,19 @@ def strip_frontmatter(lines: list[str]) -> list[str]:
     return lines
 
 
-def _closing_run(text: str, pos: int, width: int, limit: int) -> int:
-    """Return the end of the first run of exactly ``width`` backticks, or -1."""
-    while (found := text.find("`" * width, pos, limit)) >= 0:
+def _closing_run(text: str, pos: int, width: int, limit: int) -> int | None:
+    """Return the end of the first run of exactly ``width`` backticks, or ``None``."""
+    # Searched from ``pos``, at least 1, a run is never found at 0.
+    while (
+        found := text.find("`" * width, pos, limit)
+    ) >= 0:  # pragma: no mutate -- see above.
         end = found + width
         if end == len(text) or text[end] != "`":
             return end
         pos = end
         while pos < limit and text[pos] == "`":
             pos += 1
-    return -1
+    return None
 
 
 def _escaped(text: str, index: int) -> bool:
