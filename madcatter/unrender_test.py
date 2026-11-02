@@ -21,7 +21,16 @@ from madcatter.mdcat import (
     rewritten,
     strip_trailing_whitespace,
 )
-from madcatter.unrender import Layout, mark_source, unrender
+from madcatter.unrender import (
+    Layout,
+    _align,
+    _drop,
+    _sgr,
+    _shown_text,
+    _Span,
+    mark_source,
+    unrender,
+)
 
 
 if TYPE_CHECKING:
@@ -186,6 +195,22 @@ def test_unrender_reads_the_shown_text_when_the_hidden_source_is_damaged(
     assert _unrender(_damaged(rendered)[damage]) == "# Title\n\n- **item**\n"
 
 
+def test_unrender_reads_the_shown_text_past_padding_in_a_hidden_source(
+    tmp_path: Path,
+) -> None:
+    """Base64 read leniently would ignore the stray padding and trust the source."""
+    source = _LOSSY["escapes"]
+    rendered = _in_place(tmp_path, source)
+    start = rendered.index("base64,") + len("base64,")
+    piece = rendered[start : rendered.index("\x1b\\", start)]
+    shown = rendered.rpartition("\x1b]8;;\x1b\\")[2]
+
+    padded = _unrender(rendered.replace(piece, piece + "====", 1))
+
+    assert padded == _unrender(shown)
+    assert padded != source
+
+
 def test_unrender_drops_a_hidden_source_cut_off_mid_code() -> None:
     layout = Layout(width=80, justify=False, math=True, frontmatter=True)
     marked = mark_source("Hidden\n", layout=layout)
@@ -339,6 +364,161 @@ def test_unrender_drops_other_escapes_and_honors_bare_reset() -> None:
 def test_unrender_reads_link_text_markup() -> None:
     rendered = "\x1b]8;id=2;u\x07\x1b[1;4;34mb\x1b[0m\x1b[4;34m c\x1b[0m\x1b]8;;\x07"
     assert _unrender(rendered) == "[**b** c](u)"
+
+
+@pytest.mark.parametrize(
+    ("params", "style"),
+    [
+        ("29", set[str]()),
+        ("30", {"fg30"}),
+        ("37", {"fg37"}),
+        ("89", set[str]()),
+        ("90", {"fg90"}),
+        ("97", {"fg97"}),
+        ("98", set[str]()),
+        ("39", set[str]()),
+        ("40", {"bg"}),
+        ("47", {"bg"}),
+        ("49", set[str]()),
+        ("99", set[str]()),
+        ("100", {"bg"}),
+        ("107", {"bg"}),
+        ("108", set[str]()),
+        # An extended color's index or RGB triple is no attribute of its own.
+        ("38", set[str]()),
+        ("38;5;1", set[str]()),
+        ("48;5;1", {"bg"}),
+        ("38;2;1;2;3", set[str]()),
+        ("38;2;1;2;3;1", {"bold"}),
+        ("38;5;1;3", {"italic"}),
+    ],
+)
+def test_sgr_reads_colors_and_skips_extended_color_arguments(
+    params: str,
+    style: set[str],
+) -> None:
+    assert _sgr(frozenset(), params) == style
+
+
+def test_sgr_replaces_the_foreground_and_keeps_other_attributes() -> None:
+    assert _sgr(frozenset({"fg31", "bold"}), "32") == {"fg32", "bold"}
+
+
+@pytest.mark.parametrize(
+    ("raws", "align"),
+    [
+        (["ab", "cd"], "---"),
+        ([" a", "bc"], "--:"),
+        (["a ", " b"], "---"),
+        ([" a ", "bc"], ":-:"),
+    ],
+)
+def test_align_reads_where_the_padding_falls(raws: list[str], align: str) -> None:
+    assert _align(raws) == align
+
+
+def test_drop_removes_whole_spans_and_cuts_the_next() -> None:
+    spans = [
+        _Span(text="ab", style=frozenset(), link=""),
+        _Span(text="cd", style=frozenset({"bold"}), link=""),
+    ]
+
+    assert _drop(spans, count=2) == spans[1:]
+    assert _drop(spans, count=3) == [
+        _Span(text="d", style=frozenset({"bold"}), link=""),
+    ]
+
+
+def test_shown_text_drops_codes_and_trailing_spaces_per_line() -> None:
+    assert _shown_text("\x1b[1ma\x1b[0m  \nb ") == "a\nb"
+
+
+@pytest.mark.parametrize(
+    ("rendered", "markdown"),
+    [
+        # Colors and underline are not markup, so they never split a run.
+        ("\x1b[1;4ma\x1b[0m\x1b[1mb\x1b[0m", "**ab**"),
+        (
+            "\x1b]8;id=1;u\x1b\\\x1b[1;4;34ma\x1b[0m\x1b[1mb\x1b[0m\x1b]8;;\x1b\\",
+            "[**ab**](u)",
+        ),
+        ("\x1b[35m▌ \x1b[0m\x1b[1;35mloud\x1b[0m\x1b[1mer\x1b[0m", "> **louder**"),
+        # A closed link, and the text after the last code, are no link.
+        ("\x1b[1ma\x1b]8;;\x1b\\b\x1b[0m", "**ab**"),
+        ("\x1b[1ma\x1b[2Kb", "**ab**"),
+        # Whitespace alone takes no markers; strike closes outside bold.
+        ("a\x1b[1m \x1b[0mb", "a b"),
+        ("\x1b[1;9mx\x1b[0m", "~~**x**~~"),
+        # A link in a heading does not hide the heading.
+        (
+            "\x1b[1;4mH \x1b]8;id=1;u\x1b\\\x1b[4;34mlink\x1b[0m\x1b]8;;\x1b\\",
+            "# H [link](u)",
+        ),
+        # A rule is three or more of its characters, of any mix.
+        (_RESET + "───", "---"),
+        (_RESET + "-─━", "---"),
+        (_RESET + "XXX", "XXX"),
+        (_RESET + "──", "──"),
+    ],
+)
+def test_unrender_reads_inline_markup(rendered: str, markdown: str) -> None:
+    assert _unrender(rendered) == markdown
+
+
+def test_unrender_keeps_nesting_three_lists_deep() -> None:
+    rendered = _RESET + " • a\n    • b\n       • c\n    • d\n 1. e\n     • f\n"
+    assert _unrender(rendered) == "- a\n  - b\n    - c\n  - d\n1. e\n   - f\n"
+
+
+@pytest.mark.parametrize(
+    ("rendered", "markdown"),
+    [
+        # A code block ending the text, and one with padding rows around it.
+        ("\x1b[40m a\x1b[0m", "```\na\n```"),
+        (
+            (
+                "\x1b[40m    \x1b[0m\n\x1b[40m a\x1b[0m\n\x1b[40m b\x1b[0m\n"
+                "\x1b[40m c\x1b[0m\n\x1b[40m    \x1b[0m"
+            ),
+            "```\na\nb\nc\n```",
+        ),
+    ],
+)
+def test_unrender_fences_code_blocks(rendered: str, markdown: str) -> None:
+    assert _unrender(rendered) == markdown
+
+
+_BORDER = "\x1b[36m       \x1b[0m"
+_HEADER = "\x1b[36m \x1b[0m\x1b[1;36mh\x1b[0m\x1b[36m \x1b[0m"
+_RULE = "\x1b[36m ─── \x1b[0m"
+_ROW = "\x1b[36m \x1b[0mv\x1b[36m \x1b[0m"
+
+
+@pytest.mark.parametrize(
+    ("lines", "markdown"),
+    [
+        # Cut off after its rule, or with no body, a table still reads.
+        ([_BORDER, _HEADER, _RULE], "| h |\n|---|"),
+        ([_BORDER, _HEADER, _RULE, _BORDER, "after"], "| h |\n|---|\nafter"),
+        (
+            [_BORDER, _HEADER, _RULE, _ROW, _BORDER, "after"],
+            "| h |\n|---|\n| v |\nafter",
+        ),
+        # Too short, or broken by a blank line, it is no table.
+        ([_BORDER, _HEADER], " **h**"),
+        ([_BORDER, "", "x"], "x"),
+    ],
+)
+def test_unrender_finds_where_a_table_ends(lines: list[str], markdown: str) -> None:
+    assert _unrender("\n".join(lines)) == markdown
+
+
+def test_unrender_reads_a_row_short_of_cells() -> None:
+    header = "\x1b[36m \x1b[0ma\x1b[36m \x1b[0mb\x1b[36m \x1b[0m"
+    row = "\x1b[36m \x1b[0mx\x1b[36m \x1b[0m"
+    rendered = "\n".join([_BORDER, header, _RULE, row, _BORDER])
+
+    assert _unrender(rendered) == "| a | b |\n|---|---|\n| x |"
 
 
 if __name__ == "__main__":

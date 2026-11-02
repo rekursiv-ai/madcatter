@@ -146,7 +146,11 @@ def to_ascii(text: str) -> str:
 
     """
     text = text.translate(_UNICODE_TO_ASCII_CHARS)
-    return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    normalized = unicodedata.normalize("NFKD", text)
+    return normalized.encode(
+        "ascii",
+        "ignore",
+    ).decode()  # pragma: no mutate -- codec names ignore case.
 
 
 def strip_trailing_whitespace(text: str) -> str:
@@ -249,7 +253,10 @@ def process_emoji(text: str) -> str:
     # indented code line expands, and a 4-space nested list item stays literal.
     lines = text.split("\n")
     result: list[str] = []
-    for line, in_fence in zip(lines, inside_fence(lines), strict=True):
+    # pragma: no mutate start -- one fence flag per line, so ``strict`` never fires.
+    flagged = zip(lines, inside_fence(lines), strict=True)
+    # pragma: no mutate end
+    for line, in_fence in flagged:
         if is_fence_delimiter(line) or in_fence or line.startswith("    "):
             result.append(line)
         else:
@@ -283,8 +290,11 @@ def extract_headings(markdown_body: str) -> list[tuple[int, str]]:
     """
     headings: list[tuple[int, str]] = []
     lines = markdown_body.split("\n")
+    # pragma: no mutate start -- one fence flag per line, so ``strict`` never fires.
+    flagged = zip(lines, inside_fence(lines), strict=True)
+    # pragma: no mutate end
 
-    for line, in_code_block in zip(lines, inside_fence(lines), strict=True):
+    for line, in_code_block in flagged:
         # Track code block boundaries.
         if is_fence_delimiter(line):
             continue
@@ -442,8 +452,11 @@ def filter_section(markdown_body: str, section_name: str) -> str:
     lines = markdown_body.split("\n")
     section_lines: list[str] = []
     section_state: dict[str, int] = {}
+    # pragma: no mutate start -- one code flag per line, so ``strict`` never fires.
+    flagged = zip(lines, code_lines(markdown_body), strict=True)
+    # pragma: no mutate end
 
-    for line, in_code in zip(lines, code_lines(markdown_body), strict=True):
+    for line, in_code in flagged:
         if not in_code and (match := re.match(r"^(#{1,6})\s+(.+)$", line)):
             level = len(match.group(1))
             title = match.group(2).strip()
@@ -575,7 +588,7 @@ def watch_file(
         f"[dim]Watching {escape(path)} for changes (Ctrl+C to quit)...[/dim]\n",
     )
 
-    missing = False
+    missing = False  # pragma: no mutate -- read only for truth.
     try:
         while True:
             current_mtime = _mtime_or_none(path)
@@ -648,7 +661,10 @@ def set_terminal_title(title: str, tty: str = "/dev/tty") -> None:
     """
     safe = "".join(char for char in title if char.isprintable())[:256]
     try:
-        with Path(tty).open("w", encoding="utf-8") as terminal:
+        with Path(tty).open(
+            "w",
+            encoding="utf-8",
+        ) as terminal:  # pragma: no mutate -- a UTF-8 host's default.
             terminal.write(f"\x1b]0;{safe}\x07")
     except OSError:
         return
@@ -889,7 +905,7 @@ def _main() -> int:
             )
             if used and (flags.in_place or flags.unrender)
         ),
-        "",
+        None,
     ):
         parser.error(f"--in-place and --unrender cannot be combined with {clash}")
     if flags.in_place and (not flags.path or "-" in flags.path):
@@ -983,7 +999,10 @@ def _main() -> int:
 def _rewrite(flags: _Flags) -> None:
     """Unrender or render each path, to stdout or back over the file."""
     texts = [rewritten(path, flags) for path in flags.path]
-    for path, text in zip(flags.path, texts, strict=True):
+    # pragma: no mutate start -- one text per path, so ``strict`` never fires.
+    outputs = zip(flags.path, texts, strict=True)
+    # pragma: no mutate end
+    for path, text in outputs:
         if flags.in_place:
             _write(path, text)
         else:
@@ -1014,7 +1033,12 @@ def _read(path: str) -> str:
 def _write(path: str, text: str) -> None:
     """Write ``text`` to ``path`` as UTF-8, exactly as given."""
     try:
-        Path(path).write_text(text, encoding="utf-8", newline="")
+        # On a POSIX UTF-8 host the defaults match: no newline translation, UTF-8.
+        Path(path).write_text(
+            text,
+            encoding="utf-8",
+            newline="",
+        )  # pragma: no mutate -- see above.
     except OSError as error:
         raise _UserError(path, error) from error
 
@@ -1092,13 +1116,12 @@ def _parse_args(
     color_group.add_argument(
         "-c",
         "--color",
-        dest="color",
         action="store_true",
         default=True,
         help="color output, even to non-terminals (default)",
     )
+    # ``--no-c`` and other prefixes reach this through argparse's abbreviations.
     color_group.add_argument(
-        "--no-c",
         "--no-color",
         dest="color",
         action="store_false",

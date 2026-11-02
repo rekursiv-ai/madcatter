@@ -357,7 +357,7 @@ def _try_handle_script_after_chars(
 
     if isinstance(next_node, LatexMacroNode):
         macro_text = "\\" + next_node.macroname
-        content = converter.latex_to_text(macro_text, latex_context=_walker_context())
+        content = converter.latex_to_text(macro_text)
         return base + _convert_to_script(content, scripts, open_p, close_p), 2
 
     return "", 0
@@ -409,20 +409,21 @@ def _try_handle_script_after_macro(
     nodes: list[LatexNode],
     i: int,
 ) -> tuple[str, int]:
+    # The caller reads no count beside an empty result.
     if i + 2 >= len(nodes):
-        return "", 0
+        return "", 0  # pragma: no mutate -- see above.
 
     next_node = nodes[i + 1]
     if not isinstance(next_node, LatexCharsNode):
-        return "", 0
+        return "", 0  # pragma: no mutate -- see above.
 
     chars = next_node.chars
     if chars not in ("^", "_"):
-        return "", 0
+        return "", 0  # pragma: no mutate -- see above.
 
     arg_node = nodes[i + 2]
     if not isinstance(arg_node, LatexGroupNode):
-        return "", 0
+        return "", 0  # pragma: no mutate -- see above.
 
     is_super = chars == "^"
     group_content = _nodes_to_unicode(arg_node.nodelist)

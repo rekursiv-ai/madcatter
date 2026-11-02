@@ -118,11 +118,13 @@ def mark_source(source: str, *, layout: Layout) -> str:
         f":f={layout.frontmatter:d}"
     )
     # VTE ignores a hyperlink URI over 2083 bytes; 1500 bytes encode to 2000.
+    # An empty source still gets one code: any stop below 1500 yields only 0.
+    starts = range(0, len(data) or 1, 1500)  # pragma: no mutate -- see above.
     return "".join(
         f"\x1b]8;id=mdcat-source:{params};data:text/markdown;base64,"
-        + base64.b64encode(data[start : start + 1500]).decode("ascii")
+        + base64.b64encode(data[start : start + 1500]).decode()
         + "\x1b\\\x1b]8;;\x1b\\"
-        for start in range(0, len(data) or 1, 1500)
+        for start in starts
     )
 
 
@@ -241,11 +243,11 @@ def _sgr(style: frozenset[str], params: str) -> frozenset[str]:
         elif 30 <= code <= 37 or 90 <= code <= 97:
             current.difference_update([s for s in current if s.startswith("fg")])
             current.add(f"fg{code}")
-        elif 40 <= code <= 47 or 100 <= code <= 107 or code == 48:
+        elif 40 <= code <= 48 or 100 <= code <= 107:
             current.add("bg")
         # 38 and 48 carry a 256-color index or an RGB triple after them.
         if code in {38, 48}:
-            i += 2 if i + 1 < len(codes) and codes[i + 1] == 5 else 4
+            i += 2 if codes[i + 1 : i + 2] == [5] else 4
         i += 1
     return frozenset(current)
 
@@ -317,7 +319,8 @@ def _table(lines: list[list[_Span]]) -> list[str]:
         _align([row[col] for row in raws if col < len(row)])
         for col in range(len(header))
     ]
-    header_drop = _TABLE_STYLE | {"bold"}
+    # Rich bolds every header cell, so bold there is not markup.
+    header_drop = frozenset({"bold"})
     out = ["| " + " | ".join(_cell(cell, drop=header_drop) for cell in header) + " |"]
     out.append("|" + "|".join(aligns) + "|")
     out.extend(
@@ -347,7 +350,7 @@ def _align(raws: list[str]) -> str:
     ]
     if any(lead and trail for lead, trail in pads):
         return ":-:"
-    if any(lead == 0 < trail for lead, trail in pads):
+    if any(trail for _, trail in pads):
         return "---"
     return "--:" if any(lead for lead, _ in pads) else "---"
 
@@ -369,7 +372,7 @@ def _line(spans: list[_Span], *, lists: list[tuple[int, int]]) -> str:
     if not plain[pos:].strip():
         return quote.rstrip()
     lead, rest = _list_prefix(spans, plain=plain, pos=pos, lists=lists)
-    drop = frozenset({"fg35"}) if quotes else frozenset[str]()
+    drop = frozenset[str]()
     if not (quotes or lists):
         level, drop = _heading(rest)
         lead = "#" * level + " " if level else lead
@@ -385,9 +388,7 @@ def _list_prefix(
 ) -> tuple[str, list[_Span]]:
     """Return a line's markdown list prefix and its spans after the rendered one."""
     found = re.compile(r"( *)(•|\d+\.)(?= |$) ?").match(plain, pos)
-    column = (
-        found.end(1) - pos if found else len(plain) - pos - len(plain[pos:].lstrip(" "))
-    )
+    column = len(plain) - pos - len(plain[pos:].lstrip(" "))
     while lists and sum(rendered for rendered, _ in lists) > column:
         lists.pop()
     rendered = sum(width for width, _ in lists)
@@ -397,9 +398,8 @@ def _list_prefix(
     marker = found.group(2)
     assert isinstance(marker, str)
     bullet = marker == "•"
-    lists.append(
-        (column - rendered + len(marker) + 1, 2 if bullet else len(marker) + 1),
-    )
+    # ``•`` and ``-`` are both one character, so either marker keeps its width.
+    lists.append((column - rendered + len(marker) + 1, len(marker) + 1))
     prefix = "- " if bullet else marker + " "
     return lead + prefix, _drop(spans, count=found.end())
 
@@ -429,17 +429,17 @@ def _inline(spans: list[_Span], *, drop: frozenset[str]) -> str:
     """Convert styled spans to inline markdown, ignoring the attributes ``drop``."""
     out: list[str] = []
     for link, group in itertools.groupby(spans, key=lambda span: span.link):
-        # Rich underlines link text in blue; neither is markup.
-        ignored = drop | {"underline", "fg34"} if link else drop
-        body = _emphasis(list(group), drop=ignored)
+        body = _emphasis(list(group), drop=drop)
         out.append(f"[{body}]({link})" if link else body)
     return "".join(out)
 
 
 def _emphasis(spans: list[_Span], *, drop: frozenset[str]) -> str:
-    """Wrap each run of one style in its markdown markers."""
+    """Wrap each run of one markup in its markdown markers."""
+    # Colors, underline and dim are not markup, so they never split a run.
+    markup = frozenset({"bg", "strike", "bold", "italic"}) - drop
     out: list[str] = []
-    for style, group in itertools.groupby(spans, key=lambda span: span.style - drop):
+    for style, group in itertools.groupby(spans, key=lambda span: span.style & markup):
         text = "".join(span.text for span in group)
         if "bg" in style:
             out.append(f"`{text}`")
