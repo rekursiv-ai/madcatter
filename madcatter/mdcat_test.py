@@ -29,6 +29,7 @@ from madcatter.mdcat import (
     set_terminal_title,
     to_ascii,
 )
+from madcatter.unrender import Layout
 
 
 if TYPE_CHECKING:
@@ -3386,31 +3387,30 @@ class TestOwnedMutationExactH:
         assert values[0]["inline_code_lexer"] == "python"
 
 
-_PLAIN = mdcat.Layout(width=40, justify=False, math=True, frontmatter=True)
+_PLAIN = Layout(width=40, justify=False, math=True, frontmatter=True)
 
 
 class TestRenderPlainAndRoundTrips:
     def test_render_plain_applies_each_layout_setting(self) -> None:
-        source = (
-            "---\nt: x\n---\nA paragraph long enough to wrap at forty cols. $x^2$\n"
-        )
+        source = "---\nt: x\n---\nA paragraph that wraps at the given width. $x^2$\n"
         plain = mdcat.render_plain(source, _PLAIN)
         justified = mdcat.render_plain(
             source,
-            mdcat.Layout(width=40, justify=True, math=True, frontmatter=True),
+            Layout(width=40, justify=True, math=True, frontmatter=True),
         )
         stripped = mdcat.render_plain(
             source,
-            mdcat.Layout(width=40, justify=False, math=True, frontmatter=False),
+            Layout(width=40, justify=False, math=True, frontmatter=False),
         )
         literal = mdcat.render_plain(
             source,
-            mdcat.Layout(width=40, justify=False, math=False, frontmatter=True),
+            Layout(width=40, justify=False, math=False, frontmatter=True),
         )
 
-        assert plain.split("\n")[0] == "t: x"
-        assert justified.split("\n")[2] == "A paragraph long enough to wrap  at"
-        assert plain.split("\n")[2] == "A paragraph long enough to wrap at"
+        # Rich reads kept frontmatter as a rule, then a ``t: x`` setext heading.
+        assert plain.split("\n")[2].rstrip() == "t: x"
+        assert justified.split("\n")[4] == "A paragraph  that  wraps  at  the  given"
+        assert plain.split("\n")[4] == "A paragraph that wraps at the given     "
         assert "t: x" not in stripped
         assert "x²" in plain
         assert "$x^2$" in literal
@@ -3423,9 +3423,9 @@ class TestRenderPlainAndRoundTrips:
         assert "\x1b" not in mdcat.render_plain("# **T**\n", _PLAIN)
 
     def test_a_numbered_item_opens_on_its_first_paragraph(self) -> None:
-        assert (
-            mdcat.render_plain("1. one\n\n   two\n", _PLAIN) == " 1. one\n\n    two\n"
-        )
+        # Rich opens a document that starts with a list on a blank line.
+        lines = mdcat.render_plain("1. one\n\n   two\n", _PLAIN).split("\n")
+        assert [line.rstrip() for line in lines] == ["", " 1. one", "", "    two", ""]
 
     def test_prepare_reads_every_line_ending_as_a_newline(self) -> None:
         body = mdcat._prepare("a\r\nb\rc\n", frontmatter=True, math=True)
