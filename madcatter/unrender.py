@@ -118,13 +118,12 @@ def mark_source(source: str, *, layout: Layout) -> str:
         f":f={layout.frontmatter:d}"
     )
     # VTE ignores a hyperlink URI over 2083 bytes; 1500 bytes encode to 2000.
-    # An empty source still gets one code: any stop below 1500 yields only 0.
-    starts = range(0, len(data) or 1, 1500)  # pragma: no mutate -- see above.
+    pieces = [bytes(piece) for piece in itertools.batched(data, 1500)] or [b""]
     return "".join(
         f"\x1b]8;id=mdcat-source:{params};data:text/markdown;base64,"
-        + base64.b64encode(data[start : start + 1500]).decode()
+        + base64.b64encode(piece).decode()
         + "\x1b\\\x1b]8;;\x1b\\"
-        for start in starts
+        for piece in pieces
     )
 
 

@@ -14,6 +14,7 @@ import collections
 import difflib
 import hashlib
 import io
+import math
 import os
 import pydoc
 import re
@@ -147,10 +148,7 @@ def to_ascii(text: str) -> str:
     """
     text = text.translate(_UNICODE_TO_ASCII_CHARS)
     normalized = unicodedata.normalize("NFKD", text)
-    return normalized.encode(
-        "ascii",
-        "ignore",
-    ).decode()  # pragma: no mutate -- codec names ignore case.
+    return "".join(char for char in normalized if char.isascii())
 
 
 def strip_trailing_whitespace(text: str) -> str:
@@ -251,12 +249,8 @@ def process_emoji(text: str) -> str:
 
     # A fence-and-indent line scan, not the block parse (0.3 s on 2 MB): a tab-
     # indented code line expands, and a 4-space nested list item stays literal.
-    lines = text.split("\n")
     result: list[str] = []
-    # pragma: no mutate start -- one fence flag per line, so ``strict`` never fires.
-    flagged = zip(lines, inside_fence(lines), strict=True)
-    # pragma: no mutate end
-    for line, in_fence in flagged:
+    for line, in_fence in inside_fence(text.split("\n")):
         if is_fence_delimiter(line) or in_fence or line.startswith("    "):
             result.append(line)
         else:
@@ -289,12 +283,7 @@ def extract_headings(markdown_body: str) -> list[tuple[int, str]]:
 
     """
     headings: list[tuple[int, str]] = []
-    lines = markdown_body.split("\n")
-    # pragma: no mutate start -- one fence flag per line, so ``strict`` never fires.
-    flagged = zip(lines, inside_fence(lines), strict=True)
-    # pragma: no mutate end
-
-    for line, in_code_block in flagged:
+    for line, in_code_block in inside_fence(markdown_body.split("\n")):
         # Track code block boundaries.
         if is_fence_delimiter(line):
             continue
@@ -449,14 +438,9 @@ def filter_section(markdown_body: str, section_name: str) -> str:
       result: Lines from the matched heading down to the next same-or-higher level.
 
     """
-    lines = markdown_body.split("\n")
     section_lines: list[str] = []
     section_state: dict[str, int] = {}
-    # pragma: no mutate start -- one code flag per line, so ``strict`` never fires.
-    flagged = zip(lines, code_lines(markdown_body), strict=True)
-    # pragma: no mutate end
-
-    for line, in_code in flagged:
+    for line, in_code in code_lines(markdown_body):
         if not in_code and (match := re.match(r"^(#{1,6})\s+(.+)$", line)):
             level = len(match.group(1))
             title = match.group(2).strip()
@@ -583,12 +567,12 @@ def watch_file(
       flags: Parsed rendering flags.
 
     """
-    last_mtime = 0.0
+    # None while the file is missing; NaN equals no mtime, so the first stat renders.
+    last_mtime: float | None = math.nan
     console.print(
         f"[dim]Watching {escape(path)} for changes (Ctrl+C to quit)...[/dim]\n",
     )
 
-    missing = False  # pragma: no mutate -- read only for truth.
     try:
         while True:
             current_mtime = _mtime_or_none(path)
@@ -600,10 +584,9 @@ def watch_file(
                 # Removed between the stat and the read: report it, retry next tick.
                 if not _render_or_false(render_func, path, console, flags):
                     current_mtime = None
-                last_mtime = current_mtime or 0.0
-            if current_mtime is None and not missing:
+            if current_mtime is None and last_mtime is not None:
                 console.print(f"[red]File {escape(path)} not found[/red]")
-            missing = current_mtime is None
+            last_mtime = current_mtime
             time.sleep(1)
     except KeyboardInterrupt:
         console.print("\n[dim]Stopped watching[/dim]")
@@ -661,11 +644,8 @@ def set_terminal_title(title: str, tty: str = "/dev/tty") -> None:
     """
     safe = "".join(char for char in title if char.isprintable())[:256]
     try:
-        with Path(tty).open(
-            "w",
-            encoding="utf-8",
-        ) as terminal:  # pragma: no mutate -- a UTF-8 host's default.
-            terminal.write(f"\x1b]0;{safe}\x07")
+        with Path(tty).open("wb") as terminal:
+            terminal.write(f"\x1b]0;{safe}\x07".encode())
     except OSError:
         return
 
@@ -849,11 +829,8 @@ def main() -> int:
 
 
 def _main() -> int:
-    # pragma: no mutate start -- the "" fallback only runs under -OO.
-    description = (__doc__ or "").strip()
-    # pragma: no mutate end
     parser = argparse.ArgumentParser(
-        description=description,
+        description=(__doc__ or "").strip(),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     flags, remaining = _parse_args(parser)
@@ -998,10 +975,7 @@ def _main() -> int:
 # they were.
 def _rewrite(flags: _Flags) -> None:
     """Unrender or render each path, to stdout or back over the file."""
-    texts = [rewritten(path, flags) for path in flags.path]
-    # pragma: no mutate start -- one text per path, so ``strict`` never fires.
-    outputs = zip(flags.path, texts, strict=True)
-    # pragma: no mutate end
+    outputs = [(path, rewritten(path, flags)) for path in flags.path]
     for path, text in outputs:
         if flags.in_place:
             _write(path, text)
@@ -1033,12 +1007,7 @@ def _read(path: str) -> str:
 def _write(path: str, text: str) -> None:
     """Write ``text`` to ``path`` as UTF-8, exactly as given."""
     try:
-        # On a POSIX UTF-8 host the defaults match: no newline translation, UTF-8.
-        Path(path).write_text(
-            text,
-            encoding="utf-8",
-            newline="",
-        )  # pragma: no mutate -- see above.
+        Path(path).write_bytes(text.encode())
     except OSError as error:
         raise _UserError(path, error) from error
 

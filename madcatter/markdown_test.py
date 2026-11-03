@@ -137,7 +137,8 @@ def test_is_fence_delimiter_accepts_tilde_info():
 
 def test_inside_fence_reports_the_state_each_line_starts_in():
     lines = ["a", "```", "b", "```x```", "~~~", "c", "```"]
-    assert inside_fence(lines) == [False, False, True, True, True, False, False]
+    flags = [False, False, True, True, True, False, False]
+    assert inside_fence(lines) == list(zip(lines, flags, strict=True))
     assert inside_fence([]) == []
 
 
@@ -198,6 +199,7 @@ def test_process_math_blocks_never_reads_math_across_or_inside_code(text: str):
         ("`a``b` `", [("`a``b`", True), (" `", False)]),
         ("\\`a` `b`", [("\\`a", False), ("` `", True), ("b`", False)]),
         ("`a\n\nb`", [("`a\n\nb`", False)]),
+        ("`\n\n`", [("`\n\n`", False)]),
         ("x```", [("x```", False)]),
         # A longer run that ends the text does not close a shorter opener.
         ("`a ``", [("`a ``", False)]),
@@ -220,19 +222,8 @@ def test_split_code_spans_follows_commonmark_runs(
 
 def test_code_lines_marks_fenced_indented_and_quoted_code_only():
     text = "p\n```\nx\n```\n\n    y\n- a\n    - b\n> ```\n> z\n> ```"
-    assert code_lines(text) == [
-        False,
-        True,
-        True,
-        True,
-        False,
-        True,
-        False,
-        False,
-        True,
-        True,
-        True,
-    ]
+    flags = [False, True, True, True, False, True, False, False, True, True, True]
+    assert code_lines(text) == list(zip(text.split("\n"), flags, strict=True))
 
 
 def test_process_math_blocks_skips_the_block_parse_without_math(
@@ -241,7 +232,7 @@ def test_process_math_blocks_skips_the_block_parse_without_math(
     parses: list[str] = []
     real = markdown.code_lines
 
-    def counting(text: str) -> list[bool]:
+    def counting(text: str) -> list[tuple[str, bool]]:
         parses.append(text)
         return real(text)
 

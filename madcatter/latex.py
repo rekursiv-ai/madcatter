@@ -319,9 +319,9 @@ def _process_chars_node(
 
     # Handle trailing ^ or _ followed by group/macro.
     if chars.endswith(("^", "_")):
-        result, skip = _try_handle_script_after_chars(chars, nodes, i, converter)
-        if result:
-            return result, skip
+        scripted = _try_handle_script_after_chars(chars, nodes, i, converter)
+        if scripted is not None:
+            return scripted, 2
 
     # Handle embedded ^ or _ (e.g., "x_i^2")
     if "^" in chars or "_" in chars:
@@ -336,9 +336,10 @@ def _try_handle_script_after_chars(
     nodes: list[LatexNode],
     i: int,
     converter: LatexNodes2Text,
-) -> tuple[str, int]:
+) -> str | None:
+    """Return ``chars`` with the group or macro after it as its script, or ``None``."""
     if i + 1 >= len(nodes):
-        return "", 0
+        return None
 
     is_super = chars.endswith("^")
     next_node = nodes[i + 1]
@@ -353,14 +354,14 @@ def _try_handle_script_after_chars(
 
     if isinstance(next_node, LatexGroupNode):
         content = _nodes_to_unicode(next_node.nodelist)
-        return base + _convert_to_script(content, scripts, open_p, close_p), 2
+        return base + _convert_to_script(content, scripts, open_p, close_p)
 
     if isinstance(next_node, LatexMacroNode):
         macro_text = "\\" + next_node.macroname
         content = converter.latex_to_text(macro_text)
-        return base + _convert_to_script(content, scripts, open_p, close_p), 2
+        return base + _convert_to_script(content, scripts, open_p, close_p)
 
-    return "", 0
+    return None
 
 
 def _process_macro_node(
@@ -387,9 +388,9 @@ def _process_macro_node(
     )
 
     # Check if followed by ^{...} or _{...}.
-    result, skip = _try_handle_script_after_macro(unicode_text, nodes, i)
-    if result:
-        return result, skip
+    scripted = _try_handle_script_after_macro(unicode_text, nodes, i)
+    if scripted is not None:
+        return scripted, 3
 
     return unicode_text, 1
 
@@ -408,22 +409,22 @@ def _try_handle_script_after_macro(
     unicode_text: str,
     nodes: list[LatexNode],
     i: int,
-) -> tuple[str, int]:
-    # The caller reads no count beside an empty result.
+) -> str | None:
+    """Return ``unicode_text`` with a ``^{...}`` or ``_{...}`` after it applied, or ``None``."""
     if i + 2 >= len(nodes):
-        return "", 0  # pragma: no mutate -- see above.
+        return None
 
     next_node = nodes[i + 1]
     if not isinstance(next_node, LatexCharsNode):
-        return "", 0  # pragma: no mutate -- see above.
+        return None
 
     chars = next_node.chars
     if chars not in ("^", "_"):
-        return "", 0  # pragma: no mutate -- see above.
+        return None
 
     arg_node = nodes[i + 2]
     if not isinstance(arg_node, LatexGroupNode):
-        return "", 0  # pragma: no mutate -- see above.
+        return None
 
     is_super = chars == "^"
     group_content = _nodes_to_unicode(arg_node.nodelist)
@@ -433,7 +434,7 @@ def _try_handle_script_after_macro(
         "⁽" if is_super else "₍",
         "⁾" if is_super else "₎",
     )
-    return unicode_text + script, 3
+    return unicode_text + script
 
 
 def _reconstruct_macro_latex(node: LatexMacroNode) -> str:

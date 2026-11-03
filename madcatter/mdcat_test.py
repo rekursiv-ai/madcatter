@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from io import StringIO, TextIOBase
+from io import BufferedWriter, StringIO, TextIOBase
 from pathlib import Path
 from typing import TYPE_CHECKING, override
 
@@ -181,7 +181,7 @@ def test_process_emoji_uses_the_line_scan_not_the_block_parser(
     parses: list[str] = []
     real = markdown.code_lines
 
-    def counting(text: str) -> list[bool]:
+    def counting(text: str) -> list[tuple[str, bool]]:
         parses.append(text)
         return real(text)
 
@@ -291,6 +291,38 @@ def test_watch_reports_a_missing_file_once_per_disappearance(
     monkeypatch.setattr(time, "sleep", sleep)
     mdcat.watch_file("x.md", _render_nothing, console, flags)
     assert console.export_text().count("File x.md not found") == 1
+
+
+def test_watch_renders_a_file_stamped_at_the_epoch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    flags, _ = mdcat._parse_args(argparse.ArgumentParser(), [])
+    console = Console(file=StringIO(), force_terminal=False, record=True)
+    monkeypatch.setattr(
+        mdcat,
+        "_mtime_or_none",
+        functools.partial(_next_mtime, iter([0.0, 0.0])),
+    )
+    rendered: list[str] = []
+
+    def render(path: str, console: Console, flags: mdcat._Flags) -> str:
+        del console, flags
+        rendered.append(path)
+        return ""
+
+    sleeps = 0
+
+    def sleep(delay: float) -> None:
+        del delay
+        nonlocal sleeps
+        sleeps += 1
+        if sleeps == 2:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(time, "sleep", sleep)
+    mdcat.watch_file("x.md", render, console, flags)
+    assert rendered == ["x.md"]
+    assert "not found" not in console.export_text()
 
 
 def test_rewritten_reads_the_file_once(
@@ -853,7 +885,7 @@ class TestMadcatterTailAndCliB:
     ) -> None:
         flags, _ = mdcat._parse_args(argparse.ArgumentParser(), [])
         console = Console(file=StringIO(), force_terminal=False, record=True)
-        mtimes = iter([None, 0.0, 1.0])
+        mtimes = iter([None, 1.0, 1.0])
         seen: list[tuple[str, Console, object]] = []
         sleeps = 0
 
@@ -2748,6 +2780,8 @@ class TestOwnedMutationExactC:
         tty = tmp_path / "tty"
         set_terminal_title("doc.md", str(tty))
         assert tty.read_text() == "\x1b]0;doc.md\x07"
+        set_terminal_title("é.md", str(tty))
+        assert tty.read_bytes() == "\x1b]0;é.md\x07".encode()
         set_terminal_title("doc.md", str(tmp_path / "no" / "tty"))
 
     def test_main_console_kwargs_are_exact(
@@ -3544,8 +3578,8 @@ class TestRenderPlainAndRoundTrips:
             def __init__(self, path: str) -> None:
                 opened.append(path)
 
-            def open(self, mode: str, *, encoding: str) -> TextIOBase:
-                del mode, encoding
+            def open(self, mode: str) -> BufferedWriter:
+                del mode
                 raise OSError
 
         monkeypatch.setattr(mdcat, "Path", Refusing)

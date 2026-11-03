@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
+import bisect
 import functools
 import itertools
 import re
@@ -45,8 +46,8 @@ def is_fence_delimiter(line: str) -> bool:
     return "`" not in match.group(2)
 
 
-def inside_fence(lines: list[str]) -> list[bool]:
-    """Report, per line, whether the fence delimiters above it leave it in code.
+def inside_fence(lines: list[str]) -> list[tuple[str, bool]]:
+    """Pair each line with whether the fence delimiters above it leave it in code.
 
     One pass carries the state forward. Recounting the delimiters above each
     line instead made a 32,000-line document take over a minute.
@@ -55,16 +56,16 @@ def inside_fence(lines: list[str]) -> list[bool]:
       lines: Source lines, in order.
 
     Returns:
-      inside: One flag per line, True when an odd number of fence delimiters
+      flagged: Each line with True when an odd number of fence delimiters
         precede it. A delimiter line reports the state before it.
 
     """
-    inside: list[bool] = []
+    flagged: list[tuple[str, bool]] = []
     state = False
     for line in lines:
-        inside.append(state)
+        flagged.append((line, state))
         state ^= is_fence_delimiter(line)
-    return inside
+    return flagged
 
 
 def normalize_bullets(text: str) -> str:
@@ -80,13 +81,9 @@ def normalize_bullets(text: str) -> str:
       normalized: ``text`` with each line-leading ``• `` rewritten to ``- ``.
 
     """
-    lines = text.split("\n")
-    # pragma: no mutate start -- one fence flag per line, so ``strict`` never fires.
-    flagged = zip(lines, inside_fence(lines), strict=True)
-    # pragma: no mutate end
     return "\n".join(
         line if fenced else re.sub(r"^(\s*)•(?=\s)", r"\1-", line)
-        for line, fenced in flagged
+        for line, fenced in inside_fence(text.split("\n"))
     )
 
 
@@ -130,11 +127,8 @@ def map_prose(markdown_body: str, convert: Callable[[str], str]) -> str:
       converted: ``markdown_body`` with every stretch of prose converted.
 
     """
-    lines = markdown_body.split("\n")
     out: list[str] = []
-    # pragma: no mutate start -- one code flag per line, so ``strict`` never fires.
-    flagged = zip(lines, code_lines(markdown_body), strict=True)
-    # pragma: no mutate end
+    flagged = code_lines(markdown_body)
     for in_code, group in itertools.groupby(flagged, key=lambda pair: pair[1]):
         chunk = "\n".join(line for line, _ in group)
         out.append(
@@ -148,8 +142,8 @@ def map_prose(markdown_body: str, convert: Callable[[str], str]) -> str:
     return "\n".join(out)
 
 
-def code_lines(markdown_body: str) -> list[bool]:
-    r"""Report, per line, whether markdown parses it as part of a code block.
+def code_lines(markdown_body: str) -> list[tuple[str, bool]]:
+    r"""Pair each line with whether markdown parses it as part of a code block.
 
     Fenced blocks (closed or not) and indented blocks count, wherever they
     nest; a list item's indented continuation does not.
@@ -158,15 +152,17 @@ def code_lines(markdown_body: str) -> list[bool]:
       markdown_body: Markdown source.
 
     Returns:
-      in_code: One flag per ``markdown_body.split("\\n")`` line.
+      flagged: Each ``markdown_body.split("\\n")`` line with its flag.
 
     """
-    in_code = [False] * (markdown_body.count("\n") + 1)
+    in_code: set[int] = set()
     for token in _block_parser().parse(markdown_body):
         if token.type in {"fence", "code_block"} and token.map is not None:
-            start, end = token.map
-            in_code[start:end] = [True] * (end - start)
-    return in_code
+            in_code.update(range(*token.map))
+    return [
+        (line, number in in_code)
+        for number, line in enumerate(markdown_body.split("\n"))
+    ]
 
 
 def split_code_spans(text: str) -> list[tuple[str, bool]]:
@@ -183,18 +179,16 @@ def split_code_spans(text: str) -> list[tuple[str, bool]]:
 
     """
     pieces: list[tuple[str, bool]] = []
-    # ``limit`` is the end of the paragraph holding ``pos``; spans never cross it.
-    start = pos = limit = 0
+    paragraph_ends = [blank.start() for blank in re.finditer("\n\n", text)]
+    paragraph_ends.append(len(text))
+    start = pos = 0
     while (opener := text.find("`", pos)) >= 0:
         run_end = opener
         while run_end < len(text) and text[run_end] == "`":
             run_end += 1
         pos = run_end
-        # Searched from ``run_end``, which is at least 1, a paragraph's end found
-        # again at the boundary is the same one, and ``blank`` is never 0.
-        if run_end > limit:  # pragma: no mutate -- see above.
-            blank = text.find("\n\n", run_end)
-            limit = len(text) if blank < 0 else blank  # pragma: no mutate -- see above.
+        # Spans never cross the end of the paragraph.
+        limit = paragraph_ends[bisect.bisect_left(paragraph_ends, run_end)]
         close = _closing_run(text, run_end, run_end - opener, limit)
         if close is None or _escaped(text, opener):
             continue
@@ -228,10 +222,8 @@ def strip_frontmatter(lines: list[str]) -> list[str]:
 
 def _closing_run(text: str, pos: int, width: int, limit: int) -> int | None:
     """Return the end of the first run of exactly ``width`` backticks, or ``None``."""
-    # Searched from ``pos``, at least 1, a run is never found at 0.
-    while (
-        found := text.find("`" * width, pos, limit)
-    ) >= 0:  # pragma: no mutate -- see above.
+    run = "`" * width
+    while (found := text.find(run, pos, limit)) != -1:
         end = found + width
         if end == len(text) or text[end] != "`":
             return end

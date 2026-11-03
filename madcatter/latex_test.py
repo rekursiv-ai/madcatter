@@ -490,24 +490,12 @@ def test_try_handle_script_after_chars_handles_group_and_macro(
 ) -> None:
     group_nodes, _, _ = latexwalker.LatexWalker("x^{ab}").get_latex_nodes()
     converter = LatexNodes2Text()
-    group_result, group_skip = latex._try_handle_script_after_chars(
-        "x^",
-        group_nodes,
-        0,
-        converter,
-    )
+    group_result = latex._try_handle_script_after_chars("x^", group_nodes, 0, converter)
     assert group_result == "xᵃᵇ"
-    assert group_skip == 2
 
     macro_nodes, _, _ = latexwalker.LatexWalker(r"x^\alpha").get_latex_nodes()
-    macro_result, macro_skip = latex._try_handle_script_after_chars(
-        "x^",
-        macro_nodes,
-        0,
-        converter,
-    )
+    macro_result = latex._try_handle_script_after_chars("x^", macro_nodes, 0, converter)
     assert macro_result == "xᵅ"
-    assert macro_skip == 2
     macro_nodes, _, _ = latexwalker.LatexWalker(r"x^\alpha").get_latex_nodes()
     calls: list[tuple[str, str]] = []
 
@@ -522,78 +510,57 @@ def test_try_handle_script_after_chars_handles_group_and_macro(
         return "sentinel"
 
     monkeypatch.setattr(latex, "_convert_to_script", fake_convert)
-    macro_result, macro_skip = latex._try_handle_script_after_chars(
-        "x^",
-        macro_nodes,
-        0,
-        converter,
-    )
-    assert (macro_result, macro_skip) == ("xsentinel", 2)
+    macro_result = latex._try_handle_script_after_chars("x^", macro_nodes, 0, converter)
+    assert macro_result == "xsentinel"
     assert calls == [("⁽", "⁾")]
 
 
 def test_try_handle_script_after_chars_rejects_missing_or_plain_next_node():
     converter = LatexNodes2Text()
     node = LatexCharsNode(chars="x^")
-    assert latex._try_handle_script_after_chars("x^", [node], 0, converter) == ("", 0)
+    assert latex._try_handle_script_after_chars("x^", [node], 0, converter) is None
     plain = LatexCharsNode(chars="2")
-    assert latex._try_handle_script_after_chars("x^", [node, plain], 0, converter) == (
-        "",
-        0,
+    assert (
+        latex._try_handle_script_after_chars("x^", [node, plain], 0, converter) is None
     )
+
+
+def test_process_chars_node_consumes_the_script_node_it_applies():
+    nodes, _, _ = latexwalker.LatexWalker("x^{ab} y").get_latex_nodes()
+    processed, skip = latex._process_chars_node(
+        cast(LatexCharsNode, nodes[0]),
+        nodes,
+        0,
+        LatexNodes2Text(),
+    )
+    assert (processed, skip) == ("xᵃᵇ", 2)
 
 
 def test_try_handle_script_after_chars_converts_embedded_base_and_unsupported():
     nodes, _, _ = latexwalker.LatexWalker("x_i^{aQ}").get_latex_nodes()
-    result, skip = latex._try_handle_script_after_chars(
-        "x_i^",
-        nodes,
-        0,
-        LatexNodes2Text(),
-    )
+    converter = LatexNodes2Text()
+    result = latex._try_handle_script_after_chars("x_i^", nodes, 0, converter)
     assert result == "xᵢᵃ⁽Q⁾"
-    assert skip == 2
 
     nodes, _, _ = latexwalker.LatexWalker("x^i_{a}").get_latex_nodes()
-    result, skip = latex._try_handle_script_after_chars(
-        "x^i_",
-        nodes,
-        0,
-        LatexNodes2Text(),
-    )
+    result = latex._try_handle_script_after_chars("x^i_", nodes, 0, converter)
     assert result == "xⁱₐ"
-    assert skip == 2
 
     nodes, _, _ = latexwalker.LatexWalker("x^i_{a}").get_latex_nodes()
-    result, skip = latex._try_handle_script_after_chars(
-        "x^i_^",
-        nodes,
-        0,
-        LatexNodes2Text(),
-    )
+    result = latex._try_handle_script_after_chars("x^i_^", nodes, 0, converter)
     assert result == "xⁱ_ᵃ"
-    assert skip == 2
 
     nodes, _, _ = latexwalker.LatexWalker("x_{aQ}").get_latex_nodes()
-    result, skip = latex._try_handle_script_after_chars(
-        "x_",
-        nodes,
-        0,
-        LatexNodes2Text(),
-    )
+    result = latex._try_handle_script_after_chars("x_", nodes, 0, converter)
     assert result == "xₐ₍Q₎"
-    assert skip == 2
 
 
 def test_try_handle_script_after_macro_handles_group_and_boundaries():
     nodes, _, _ = latexwalker.LatexWalker(r"\alpha^{ab}").get_latex_nodes()
-    result, skip = latex._try_handle_script_after_macro("α", nodes, 0)
-    assert result == "αᵃᵇ"
-    assert skip == 3
+    assert latex._try_handle_script_after_macro("α", nodes, 0) == "αᵃᵇ"
     nodes, _, _ = latexwalker.LatexWalker(r"\alpha^{aQ}").get_latex_nodes()
-    result, skip = latex._try_handle_script_after_macro("α", nodes, 0)
-    assert (result, skip) == ("αᵃ⁽Q⁾", 3)
-    assert latex._try_handle_script_after_macro("α", nodes, 2) == ("", 0)
+    assert latex._try_handle_script_after_macro("α", nodes, 0) == "αᵃ⁽Q⁾"
+    assert latex._try_handle_script_after_macro("α", nodes, 2) is None
 
 
 def test_reconstruct_nodes_latex_preserves_nested_macro_and_group():
@@ -622,18 +589,26 @@ def test_process_macro_node_returns_exact_skip_for_symbols_and_fractions():
     )
     assert (processed, skip) == ("½", 1)
 
+    nodes, _, _ = latexwalker.LatexWalker(r"\beta^{ab} x").get_latex_nodes()
+    processed, skip = latex._process_macro_node(
+        cast(LatexMacroNode, nodes[0]),
+        nodes,
+        0,
+        LatexNodes2Text(),
+    )
+    assert (processed, skip) == ("βᵃᵇ", 3)
+
 
 def test_try_handle_script_after_macro_covers_subscript_and_rejections():
     nodes, _, _ = latexwalker.LatexWalker(r"\alpha_{aQ}").get_latex_nodes()
-    result, skip = latex._try_handle_script_after_macro("α", nodes, 0)
-    assert (result, skip) == ("αₐ₍Q₎", 3)
+    assert latex._try_handle_script_after_macro("α", nodes, 0) == "αₐ₍Q₎"
 
     nodes, _, _ = latexwalker.LatexWalker(r"\alpha{}x").get_latex_nodes()
-    assert latex._try_handle_script_after_macro("α", nodes, 0) == ("", 0)
+    assert latex._try_handle_script_after_macro("α", nodes, 0) is None
     nodes, _, _ = latexwalker.LatexWalker(r"\alpha^2x").get_latex_nodes()
-    assert latex._try_handle_script_after_macro("α", nodes, 0) == ("", 0)
+    assert latex._try_handle_script_after_macro("α", nodes, 0) is None
     nodes, _, _ = latexwalker.LatexWalker(r"\alpha^").get_latex_nodes()
-    assert latex._try_handle_script_after_macro("α", nodes, 0) == ("", 0)
+    assert latex._try_handle_script_after_macro("α", nodes, 0) is None
 
 
 def test_latex2unicode_reuses_default_latex_contexts(
