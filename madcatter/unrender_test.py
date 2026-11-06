@@ -244,6 +244,23 @@ def test_mark_source_splits_long_sources_and_round_trips_unicode() -> None:
     assert mark_source("", layout=layout).count("\x1b]8;;\x1b\\") == 1
 
 
+def test_mark_source_splits_at_the_1500_byte_boundary() -> None:
+    source = "word " * 300 + "\n"
+    layout = Layout(width=80, justify=False, math=True, frontmatter=True)
+    marked = mark_source(source, layout=layout)
+    pieces = [
+        base64.b64decode(
+            code.partition("base64,")[2].partition("\x1b\\")[0],
+            validate=True,
+        )
+        for code in marked.split("\x1b]8;;\x1b\\")
+        if code
+    ]
+    assert [len(piece) for piece in pieces] == [1500, 1]
+    assert b"".join(pieces) == source.encode()
+    assert _unrender(marked + render_plain(source, layout)) == source
+
+
 @pytest.mark.parametrize("source", ["", "a", "é🚀"])
 def test_mark_source_payload_preserves_source_bytes(source: str) -> None:
     layout = Layout(width=80, justify=False, math=True, frontmatter=True)
