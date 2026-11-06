@@ -244,6 +244,14 @@ def test_mark_source_splits_long_sources_and_round_trips_unicode() -> None:
     assert mark_source("", layout=layout).count("\x1b]8;;\x1b\\") == 1
 
 
+@pytest.mark.parametrize("source", ["", "a", "é🚀"])
+def test_mark_source_payload_preserves_source_bytes(source: str) -> None:
+    layout = Layout(width=80, justify=False, math=True, frontmatter=True)
+    marked = mark_source(source, layout=layout)
+    payload = marked.partition("base64,")[2].partition("\x1b\\")[0]
+    assert base64.b64decode(payload, validate=True) == source.encode()
+
+
 def test_unrender_keeps_list_nesting_inside_unstyled_quotes() -> None:
     rendered = _RESET + "▌  • a\n▌     • b\n▌ text\n"
     assert _unrender(rendered) == "> - a\n>   - b\n> text\n"
@@ -345,6 +353,13 @@ def test_unrender_moves_spaces_outside_emphasis_and_merges_spans() -> None:
 
 def test_unrender_strips_heading_style_from_inline_spans() -> None:
     assert _unrender("\x1b[1;4mH \x1b[0m\x1b[1;4;36;40mx\x1b[0m") == "# H `x`"
+
+
+def test_unrender_heading_ignores_unstyled_whitespace_and_link_styles() -> None:
+    rendered = (
+        "\x1b[1;4mHeading\x1b[0m \x1b]8;;https://example.com\x1b\\link\x1b]8;;\x1b\\"
+    )
+    assert _unrender(rendered) == "# Heading [link](https://example.com)"
 
 
 def test_unrender_keeps_markup_inside_quotes_and_list_items() -> None:

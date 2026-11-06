@@ -260,8 +260,11 @@ def test_process_math_blocks_reads_each_character_once(
         return convert(text)
 
     monkeypatch.setattr(markdown, "_math_to_unicode", counting)
-    text = "`a` $x^2$ b\n" * 2_000 + "```\ncode\n```\n" + "`c` $y_i$\n" * 2_000
-    process_math_blocks(text)
+    text = "`a` $x^2$ b\n" * 8 + "```\ncode\n```\n" + "`c` $y_i$\n" * 8
+    assert process_math_blocks(text) == (
+        "`a` x² b\n" * 8 + "```\ncode\n```\n" + "`c` yᵢ\n" * 8
+    )
+    assert seen
     assert sum(seen) <= len(text)
 
 
