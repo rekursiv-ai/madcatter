@@ -2590,6 +2590,8 @@ class TestOwnedMutationExactC:
         console = Console(file=StringIO(), force_terminal=False, record=True)
         mdcat.render_diff(str(rendered), str(source), console)
         assert console.export_text() == ""
+        mdcat.render_diff(str(source), str(rendered), console)
+        assert console.export_text() == ""
 
     def test_follow_reads_the_markdown_of_a_rendered_file(
         self,
