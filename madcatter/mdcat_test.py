@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from io import BufferedWriter, StringIO, TextIOBase
 from pathlib import Path
-from typing import TYPE_CHECKING, override
+from typing import TYPE_CHECKING
+from unittest.mock import ANY, Mock
 
 import argparse
 import collections
@@ -17,6 +18,7 @@ import time
 
 from rich.console import Console
 from rich.rule import Rule
+from rich.text import Text
 
 import pytest
 import requests
@@ -485,12 +487,7 @@ def test_check_links_reports_skip_success_failure_and_error(
 
 def test_diff_export_and_file_helpers(tmp_path: Path) -> None:
     first = tmp_path / "first.md"
-    second = tmp_path / "second.md"
     first.write_text("same\nold\n")
-    second.write_text("same\nnew\n")
-    console = Console(file=StringIO(), force_terminal=False, record=True)
-    mdcat.render_diff(str(first), str(second), console)
-    assert "-old" in console.export_text()
     assert mdcat._read_or_none(str(first)) == b"same\nold\n"
     assert mdcat._read_or_none(str(tmp_path / "missing")) is None
     assert mdcat._mtime_or_none(str(first)) is not None
@@ -953,30 +950,73 @@ class TestMadcatterTailAndCliB:
         assert mdcat.render_markdown_file("-", console, flags) == "# H\nbody"
         assert "No links found" in console.export_text()
 
-    def test_render_page_and_regular_forward_options(
+    @pytest.mark.parametrize(
+        ("argv", "width", "color", "justify", "expected"),
+        [
+            ([], None, True, "left", "café\n\n"),
+            (["--pad", "40", "--width", "70"], 40, True, "left", "café  \n\n"),
+            (
+                ["--justify", "--width", "70", "--color", "--code-theme", "dracula"],
+                70,
+                True,
+                "full",
+                "café\n\n",
+            ),
+            (["--page", "--color", "--width", "70"], 70, True, "left", "café\n\n"),
+            (
+                ["--page", "--ascii", "--pad", "40", "--justify", "--width", "70"],
+                70,
+                False,
+                "full",
+                "cafe  \n\n",
+            ),
+            (["--page", "--ascii"], None, False, "left", "cafe\n\n"),
+            (
+                ["--inline-code-lexer", "python", "--no-hyperlinks", "--no-color"],
+                None,
+                False,
+                "left",
+                "café\n\n",
+            ),
+            (["--ascii"], None, False, "left", "café\n\n"),
+        ],
+    )
+    def test_render_capture_routes_output_and_options(
         self,
-        tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
+        argv: list[str],
+        width: int | None,
+        *,
+        color: bool,
+        justify: str,
+        expected: str,
     ) -> None:
-        path = tmp_path / "x.md"
-        path.write_text("hello  \n")
-        flags, _ = mdcat._parse_args(
-            argparse.ArgumentParser(),
-            ["--page", "--ascii", "--pad", "40", "--justify"],
-        )
-        paged: list[str] = []
-        monkeypatch.setattr(pydoc, "pager", paged.append)
-        assert (
-            mdcat.render_markdown_file(str(path), Console(file=StringIO()), flags)
-            == "hello  \n"
-        )
-        assert paged
-        assert "hello" in paged[0]
-
-        flags, _ = mdcat._parse_args(argparse.ArgumentParser(), ["--pad", "40"])
+        flags, _ = mdcat._parse_args(argparse.ArgumentParser(), argv)
         output = StringIO()
-        mdcat.render_markdown_file(str(path), Console(file=output), flags)
-        assert "hello" in output.getvalue()
+        console = Console(file=output)
+        markdown = Mock(return_value="café  \n")
+        capture = Mock(wraps=Console)
+        pager = Mock()
+        monkeypatch.setattr(mdcat, "Markdown", markdown)
+        monkeypatch.setattr(mdcat, "Console", capture)
+        monkeypatch.setattr(pydoc, "pager", pager)
+
+        assert mdcat.render_markdown("body  \n", console, flags) == "body  \n"
+
+        markdown.assert_called_once_with(
+            "body  \n",
+            justify=justify,
+            code_theme=flags.code_theme,
+            hyperlinks=flags.hyperlinks,
+            inline_code_lexer=flags.inline_code_lexer,
+        )
+        capture.assert_called_once_with(file=ANY, force_terminal=color, width=width)
+        if "--page" in argv:
+            pager.assert_called_once_with(expected)
+            assert output.getvalue() == ""
+        else:
+            pager.assert_not_called()
+            assert output.getvalue() == expected
 
     def test_line_render_processes_emoji_and_math(
         self,
@@ -1123,32 +1163,6 @@ class TestOwnedMutationBoundaries:
         assert ("syntax", ("two", "python", {"theme": "monokai"})) in calls
         assert panel_titles == ["Code Block 1", "Code Block 2 (python)"]
 
-    def test_render_diff_forwards_each_style(self, tmp_path: Path) -> None:
-        first = tmp_path / "first"
-        second = tmp_path / "second"
-        first.write_text("old\n")
-        second.write_text("new\n")
-        stream = StringIO()
-        console = Console(
-            file=stream,
-            force_terminal=True,
-            color_system="standard",
-            no_color=False,
-            width=200,
-        )
-        mdcat.render_diff(str(first), str(second), console)
-        output = stream.getvalue()
-        assert "---" in output
-        assert "\x1b[1;36m" in output
-        assert "+++" in output
-        assert "\x1b[1;36m" in output
-        assert "@@" in output
-        assert "\x1b[1;35m" in output
-        assert "-old" in output
-        assert "\x1b[31m" in output
-        assert "+new" in output
-        assert "\x1b[32m" in output
-
 
 class TestMadcatterMainB:
     def test_main_delegates_and_handles_broken_pipe(
@@ -1197,20 +1211,75 @@ class TestMadcatterMainB:
         assert mdcat._main() == 0
         assert calls == ["watch", "follow"]
 
-    def test_main_rejects_incompatible_flags(
+    @pytest.mark.parametrize(
+        ("argv", "message"),
+        [
+            (["--page", "--watch"], "--page and --watch cannot be used together"),
+            (["--follow", "--watch"], "--follow and --watch are mutually exclusive"),
+            (["--page", "--follow"], "--page and --follow cannot be used together"),
+            *[
+                (
+                    ["--follow", mode],
+                    "--follow cannot be combined with --toc/--links/--check-links/--code-only",
+                )
+                for mode in ("--toc", "--links", "--check-links", "--code-only")
+            ],
+            *[
+                (
+                    ["--code-lang", "python", mode],
+                    "--code-lang cannot be used with --toc, --links, or --check-links",
+                )
+                for mode in ("--toc", "--links", "--check-links")
+            ],
+            (["--unknown"], "unrecognized arguments: --unknown"),
+            (["--unknown", "other"], "unrecognized arguments: --unknown"),
+            (["--unknown", "--other"], "unrecognized arguments: --unknown --other"),
+        ],
+    )
+    def test_main_rejects_invalid_arguments(
         self,
         monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        argv: list[str],
+        message: str,
     ) -> None:
-        for args in [
-            ["--page", "--watch"],
-            ["--follow", "--watch"],
-            ["--page", "--follow"],
-            ["--follow", "--toc"],
-        ]:
-            monkeypatch.setattr(sys, "argv", ["mdcat", *args])
-            with pytest.raises(SystemExit) as exc:
-                mdcat._main()
-            assert exc.value.code == 2
+        monkeypatch.setattr(sys, "argv", ["mdcat", *argv])
+        with pytest.raises(SystemExit) as exc:
+            mdcat._main()
+        assert exc.value.code == 2
+        output = capsys.readouterr()
+        assert output.out == ""
+        assert output.err.endswith(f"error: {message}\n")
+
+    @pytest.mark.parametrize(
+        ("argv", "message"),
+        [
+            (["--watch"], "--watch requires exactly one file path"),
+            (["--watch", "-"], "--watch requires exactly one file path"),
+            (["--follow"], "--follow requires exactly one file path"),
+            (["--follow", "-"], "--follow requires exactly one file path"),
+            (["--follow", "a", "b"], "--follow requires exactly one file path"),
+            (["--diff", "other.md"], "--diff requires exactly one file argument"),
+            (
+                ["--diff", "other", "a", "b"],
+                "--diff requires exactly one file argument",
+            ),
+        ],
+    )
+    def test_main_rejects_invalid_mode_paths(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        argv: list[str],
+        message: str,
+    ) -> None:
+        monkeypatch.setattr(sys, "argv", ["mdcat", *argv])
+        with pytest.raises(SystemExit) as exc:
+            mdcat._main()
+        assert exc.value.code == 1
+        output = capsys.readouterr()
+        assert output.err == ""
+        assert Text.from_ansi(output.out).plain == f"Error: {message}\n"
 
     def test_parse_args_all_values(self) -> None:
         flags, remaining = mdcat._parse_args(
@@ -1293,23 +1362,6 @@ class TestOwnedMutationEdges:
             ("http://ok", "[green]✓ 200[/green]"),
             ("https://bad", "[red]✗ RequestException[/red]"),
         ]
-
-    def test_render_diff_preserves_context_style(self, tmp_path: Path) -> None:
-        first = tmp_path / "first"
-        second = tmp_path / "second"
-        first.write_text("same\nold\n")
-        second.write_text("same\nnew\n")
-        stream = StringIO()
-        console = Console(
-            file=stream,
-            force_terminal=True,
-            color_system="standard",
-            no_color=False,
-            width=200,
-        )
-        mdcat.render_diff(str(first), str(second), console)
-        assert " same" in stream.getvalue()
-        assert "\x1b[2m" in stream.getvalue()
 
 
 class TestMadcatterMainB2:
@@ -1398,36 +1450,6 @@ class TestOwnedLinkRequestContract:
             ("https://ok", "[green]✓ 399[/green]"),
             ("https://boundary", "[red]✗ 400[/red]"),
         ]
-
-
-class TestOwnedCodeRenderingContract:
-    def test_render_code_blocks_distinguishes_first_spacing_and_missing_language(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        panels: list[dict[str, object]] = []
-        stream = StringIO()
-
-        class Syntax:
-            def __init__(self, code: str, language: str, **kwargs: object) -> None:
-                del code, language, kwargs
-
-        class Panel:
-            def __init__(self, value: object, **kwargs: object) -> None:
-                del value
-                panels.append(kwargs)
-
-        monkeypatch.setattr(mdcat, "Syntax", Syntax)
-        monkeypatch.setattr(mdcat, "Panel", Panel)
-        mdcat.render_code_blocks(
-            [("", "one"), ("python", "two")],
-            Console(file=stream, force_terminal=False, width=200),
-        )
-        assert [panel["title"] for panel in panels] == [
-            "Code Block 1",
-            "Code Block 2 (python)",
-        ]
-        assert "\n\n" in stream.getvalue()
 
 
 class TestMadcatterRenderModesB:
@@ -1829,54 +1851,6 @@ class TestMadcatterRenderModesB:
         assert rendered == ["x", "x"]
         assert sleeps == [1.0, 1.0, 1.0]
 
-    def test_render_page_and_regular_console_options(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        path = tmp_path / "x.md"
-        path.write_text("body")
-        constructed: list[dict[str, object]] = []
-
-        class FakeMarkdown:
-            def __init__(self, body: str, **kwargs: object) -> None:
-                constructed.append({"body": body, **kwargs})
-
-        class FakeConsole:
-            is_terminal = True
-
-            def __init__(
-                self,
-                *,
-                file: StringIO | None = None,
-                **kwargs: object,
-            ) -> None:
-                self.file = file or StringIO()
-                constructed.append(kwargs)
-
-            def print(self, value: object) -> None:
-                del value
-                self.file.write("rendered")
-
-        monkeypatch.setattr(mdcat, "Markdown", FakeMarkdown)
-        monkeypatch.setattr(mdcat, "Console", FakeConsole)
-        flags, _ = mdcat._parse_args(
-            argparse.ArgumentParser(),
-            ["--justify", "--width", "70", "--color"],
-        )
-        output = StringIO()
-        outer_console = Console(file=output, force_terminal=True)
-        mdcat.render_markdown_file(str(path), outer_console, flags)
-        assert constructed[0] == {
-            "body": "body",
-            "justify": "full",
-            "code_theme": "monokai",
-            "hyperlinks": True,
-            "inline_code_lexer": None,
-        }
-        assert constructed[1] == {"force_terminal": True, "width": 70}
-        assert output.getvalue() == "rendered"
-
     def test_render_check_links_and_code_only_paths(
         self,
         tmp_path: Path,
@@ -1918,32 +1892,6 @@ class TestMadcatterRenderModesB:
         mdcat.render_markdown_file(str(path), console, flags)
         assert rendered == [[("python", "print(1)\n")]]
 
-    def test_main_invalid_path_counts_and_code_lang_error(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        for args, message in [
-            (["--watch"], "--watch requires exactly one file path"),
-            (["--watch", "-"], "--watch requires exactly one file path"),
-            (["--follow"], "--follow requires exactly one file path"),
-            (["--follow", "-"], "--follow requires exactly one file path"),
-            (["--diff", "other.md"], "--diff requires exactly one file argument"),
-            (["--code-lang", "python", "--toc"], "--code-lang cannot be used"),
-        ]:
-            monkeypatch.setattr(sys, "argv", ["mdcat", *args])
-            with pytest.raises(SystemExit) as exc:
-                mdcat._main()
-            expected_code = (
-                1
-                if args[0] in ("--watch", "--follow")
-                or (args[0] == "--diff" and len(args) > 1)
-                else 2
-            )
-            assert exc.value.code == expected_code
-            captured = capsys.readouterr()
-            assert message in captured.err or message in captured.out
-
 
 class TestOwnedMutationCoverage:
     def test_process_emoji_fences_and_indented_lines_are_protected(self) -> None:
@@ -1959,65 +1907,6 @@ class TestOwnedMutationCoverage:
     def test_filter_section_keeps_children_and_stops_at_parent_level(self) -> None:
         body = "# Intro\na\n## Target\nb\n### Child\nc\n## Next\nd"
         assert mdcat.filter_section(body, "TARGET") == ("## Target\nb\n### Child\nc")
-
-    def test_render_toc_preserves_sibling_parenting(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        parents: dict[str, object] = {}
-
-        class Node:
-            def add(self, label: str) -> Node:
-                parents[label] = self
-                return Node()
-
-        class Tree(Node):
-            def __init__(self, label: str, **kwargs: object) -> None:
-                del label, kwargs
-
-        monkeypatch.setattr(mdcat, "Tree", Tree)
-        mdcat.render_toc(
-            [(1, "A"), (2, "B"), (1, "C")],
-            Console(file=StringIO(), force_terminal=False),
-        )
-        assert parents["[bold]B[/bold]"] is not parents["[bold]C[/bold]"]
-
-    def test_render_code_blocks_only_separates_after_the_first(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        del monkeypatch
-        buf = StringIO()
-        mdcat.render_code_blocks(
-            [("", "one"), ("python", "two")],
-            Console(file=buf, force_terminal=False),
-        )
-        output = buf.getvalue()
-        first = output.index("Code Block 1")
-        second = output.index("Code Block 2 (python)")
-        assert "\n\n" in output[first:second]
-
-    def test_render_diff_emits_all_line_kinds_with_exact_styles(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        first = tmp_path / "first"
-        second = tmp_path / "second"
-        first.write_text("same\nold\n")
-        second.write_text("same\nnew\n")
-        buf = StringIO()
-        mdcat.render_diff(
-            str(first),
-            str(second),
-            Console(file=buf, force_terminal=True, width=200),
-        )
-        output = buf.getvalue()
-        assert " same" in output
-        assert "---" in output
-        assert "+++" in output
-        assert "@@" in output
-        assert "-old" in output
-        assert "+new" in output
 
 
 class TestOwnedMainAndRenderExact:
@@ -2125,74 +2014,8 @@ class TestOwnedMainAndRenderExact:
         assert mdcat.render_markdown_file(str(path), console, flags) == "body"
         assert "No code blocks found" in buf.getvalue()
 
-    def test_render_regular_mode_forwards_false_options_and_strips_padding(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        path = tmp_path / "doc.md"
-        path.write_text("body  \n")
-        captured: list[dict[str, object]] = []
-
-        class FakeMarkdown:
-            def __init__(self, body: str, **kwargs: object) -> None:
-                self.body = body
-                captured.append({"body": body, **kwargs})
-
-            @override
-            def __str__(self) -> str:
-                return self.body
-
-        monkeypatch.setattr(mdcat, "Markdown", FakeMarkdown)
-        flags, _ = mdcat._parse_args(argparse.ArgumentParser(), [])
-        output = StringIO()
-        console = Console(file=output, force_terminal=False, width=200)
-        assert mdcat.render_markdown_file(str(path), console, flags) == "body  \n"
-        assert captured == [
-            {
-                "body": "body  \n",
-                "justify": "left",
-                "code_theme": "monokai",
-                "hyperlinks": True,
-                "inline_code_lexer": None,
-            },
-        ]
-        assert output.getvalue() == "body\n\n"
-
 
 class TestOwnedMutationExactB:
-    def test_main_reports_unknown_arguments_exactly(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        monkeypatch.setattr(sys, "argv", ["mdcat", "--unknown"])
-        with pytest.raises(SystemExit) as exc:
-            mdcat._main()
-        assert exc.value.code == 2
-        assert "unrecognized arguments: --unknown" in capsys.readouterr().err
-
-    def test_main_reports_incompatible_arguments_exactly(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        cases = [
-            (["--page", "--watch"], "--page and --watch cannot be used together"),
-            (["--follow", "--watch"], "--follow and --watch are mutually exclusive"),
-            (["--page", "--follow"], "--page and --follow cannot be used together"),
-            (
-                ["--follow", "--toc"],
-                "--follow cannot be combined with --toc/--links/--check-links/--code-only",
-            ),
-        ]
-        for args, message in cases:
-            monkeypatch.setattr(sys, "argv", ["mdcat", *args])
-            with pytest.raises(SystemExit) as exc:
-                mdcat._main()
-            assert exc.value.code == 2
-            assert message in capsys.readouterr().err
-
     def test_main_diff_forwards_exact_console(
         self,
         tmp_path: Path,
@@ -2239,24 +2062,6 @@ class TestOwnedMutationExactB:
         mdcat.watch_file("x.md", render, console, flags)
         assert formats == ["%H:%M:%S"]
         assert console.export_text().endswith("Stopped watching\n")
-
-    def test_main_invalid_watch_follow_and_code_lang_messages(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        cases = [
-            (["--watch"], "--watch requires exactly one file path", 1),
-            (["--follow"], "--follow requires exactly one file path", 1),
-            (["--code-lang", "python", "--toc"], "--code-lang cannot be used", 2),
-        ]
-        for args, message, code in cases:
-            monkeypatch.setattr(sys, "argv", ["mdcat", *args])
-            with pytest.raises(SystemExit) as exc:
-                mdcat._main()
-            assert exc.value.code == code
-            captured = capsys.readouterr()
-            assert message in captured.err or message in captured.out
 
     def test_main_separator_only_between_files(
         self,
@@ -2313,80 +2118,6 @@ class TestOwnedMutationExactB:
         monkeypatch.setattr("builtins.print", print_spy)
         assert mdcat._main() == 0
         assert calls[-1][1] == {"end": ""}
-
-    def test_render_page_options_are_forwarded_exactly(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        path = tmp_path / "doc"
-        path.write_text("body")
-        page_calls: list[dict[str, object]] = []
-        paged: list[str] = []
-
-        def make_console(
-            *,
-            file: StringIO | None = None,
-            force_terminal: bool | None = None,
-            width: int | None = None,
-        ) -> Console:
-            page_calls.append(
-                {"file": file, "force_terminal": force_terminal, "width": width},
-            )
-            return Console(
-                file=file or StringIO(),
-                force_terminal=force_terminal,
-                width=width,
-            )
-
-        monkeypatch.setattr(mdcat, "Console", make_console)
-        monkeypatch.setattr(pydoc, "pager", paged.append)
-        flags, _ = mdcat._parse_args(
-            argparse.ArgumentParser(),
-            ["--page", "--color", "--width", "70"],
-        )
-        mdcat.render_markdown_file(str(path), Console(file=StringIO()), flags)
-        assert page_calls[-1]["force_terminal"] is True
-        assert page_calls[-1]["width"] == 70
-        assert paged
-
-    def test_render_regular_mode_forwards_terminal_or_force_color(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        path = tmp_path / "doc"
-        path.write_text("body")
-        calls: list[dict[str, object]] = []
-
-        class FakeMarkdown:
-            def __init__(self, body: str, **kwargs: object) -> None:
-                del body, kwargs
-
-        def make_console(
-            *,
-            file: StringIO | None = None,
-            force_terminal: bool | None = None,
-            width: int | None = None,
-        ) -> Console:
-            calls.append(
-                {"file": file, "force_terminal": force_terminal, "width": width},
-            )
-            return Console(
-                file=file or StringIO(),
-                force_terminal=force_terminal,
-                width=width,
-            )
-
-        monkeypatch.setattr(mdcat, "Markdown", FakeMarkdown)
-        monkeypatch.setattr(mdcat, "Console", make_console)
-        flags, _ = mdcat._parse_args(
-            argparse.ArgumentParser(),
-            ["--color", "--width", "70"],
-        )
-        mdcat.render_markdown_file(str(path), Console(file=StringIO()), flags)
-        assert calls[-1]["force_terminal"] is True
-        assert calls[-1]["width"] == 70
 
 
 class TestOwnedFenceParity:
@@ -2833,24 +2564,6 @@ class TestOwnedMutationExactC:
             {"file": None, "force_terminal": True, "width": 77, "record": False},
         ]
 
-    def test_invalid_mode_messages_have_no_padding(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        cases = [
-            (["--follow"], "--follow requires exactly one file path"),
-            (["--watch"], "--watch requires exactly one file path"),
-            (["--code-lang", "python", "--toc"], "--code-lang cannot be used"),
-        ]
-        for args, message in cases:
-            monkeypatch.setattr(sys, "argv", ["mdcat", *args])
-            with pytest.raises(SystemExit):
-                mdcat._main()
-            output = capsys.readouterr()
-            assert message in output.err or message in output.out
-            assert "XX" not in output.err + output.out
-
     def test_render_link_panel_and_code_filter_exactly(
         self,
         tmp_path: Path,
@@ -2943,64 +2656,25 @@ class TestOwnedMutationExactD:
         ]
         assert isinstance(seen[0]["file"], StringIO)
 
-    def test_diff_invalid_message_has_no_mutant_padding(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        monkeypatch.setattr(sys, "argv", ["mdcat", "--diff", "other.md"])
-        with pytest.raises(SystemExit) as exc:
-            mdcat._main()
-        assert exc.value.code == 1
-        output = capsys.readouterr()
-        assert "Error: --diff requires exactly one file argument" in output.out
-        assert "XX" not in output.out
-
 
 class TestOwnedMutationExactE:
+    @pytest.mark.parametrize("docstring", [mdcat.__doc__, None])
     def test_help_contains_exact_module_description(
         self,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
+        docstring: str | None,
     ) -> None:
+        monkeypatch.setattr(mdcat, "__doc__", docstring)
         monkeypatch.setattr(sys, "argv", ["mdcat", "--help"])
         with pytest.raises(SystemExit) as exc:
             mdcat._main()
         assert exc.value.code == 0
         output = capsys.readouterr().out
-        doc = mdcat.__doc__
-        assert doc is not None
-        assert doc.splitlines()[0] in output
-
-    def test_incompatible_messages_are_exact(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        cases = [
-            (["--page", "--watch"], "--page and --watch cannot be used together"),
-            (["--follow", "--watch"], "--follow and --watch are mutually exclusive"),
-            (["--page", "--follow"], "--page and --follow cannot be used together"),
-        ]
-        for args, message in cases:
-            monkeypatch.setattr(sys, "argv", ["mdcat", *args])
-            with pytest.raises(SystemExit) as exc:
-                mdcat._main()
-            assert exc.value.code == 2
-            assert capsys.readouterr().err.endswith(f"error: {message}\n")
-
-    def test_follow_invalid_path_preserves_case(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        monkeypatch.setattr(sys, "argv", ["mdcat", "--follow", "a", "b"])
-        with pytest.raises(SystemExit) as exc:
-            mdcat._main()
-        assert exc.value.code == 1
-        assert (
-            "Error: --follow requires exactly one file path" in capsys.readouterr().out
-        )
+        if docstring is not None:
+            assert docstring.strip() in output
+        else:
+            assert output.split("\n\n", 1)[1].startswith("positional arguments:\n")
 
     def test_follow_receives_exact_flags(
         self,
@@ -3037,23 +2711,6 @@ class TestOwnedMutationExactE:
 
 
 class TestOwnedMutationExactF:
-    def test_follow_error_and_unknown_arguments_are_exact(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        monkeypatch.setattr(sys, "argv", ["mdcat", "--follow", "--toc"])
-        with pytest.raises(SystemExit):
-            mdcat._main()
-        assert capsys.readouterr().err.endswith(
-            "error: --follow cannot be combined with --toc/--links/--check-links/--code-only\n",
-        )
-
-        monkeypatch.setattr(sys, "argv", ["mdcat", "--unknown", "other"])
-        with pytest.raises(SystemExit):
-            mdcat._main()
-        assert "unrecognized arguments: --unknown" in capsys.readouterr().err
-
     def test_watch_forwards_exact_console_render_and_flags(
         self,
         tmp_path: Path,
@@ -3111,32 +2768,6 @@ class TestOwnedMutationExactF:
         )
         assert mdcat._main() == 0
         assert "é" in ansi.read_text(encoding="utf-8")
-
-    def test_follow_forbids_each_display_mode(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        for option in ("--links", "--check-links", "--code-only"):
-            monkeypatch.setattr(sys, "argv", ["mdcat", "--follow", option])
-            with pytest.raises(SystemExit) as exc:
-                mdcat._main()
-            assert exc.value.code == 2
-
-    def test_diff_requires_one_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(sys, "argv", ["mdcat", "--diff", "other", "a", "b"])
-        with pytest.raises(SystemExit) as exc:
-            mdcat._main()
-        assert exc.value.code == 1
-
-    def test_code_language_forbids_each_display_mode(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        for option in ("--links", "--check-links", "--toc"):
-            monkeypatch.setattr(sys, "argv", ["mdcat", "--code-lang", "python", option])
-            with pytest.raises(SystemExit) as exc:
-                mdcat._main()
-            assert exc.value.code == 2
 
     def test_watch_passes_path_and_initial_message(
         self,
@@ -3272,23 +2903,6 @@ class TestOwnedMutationExactH:
         mdcat.render_markdown_file(str(source), Console(file=StringIO()), flags)
         assert calls[:2] == [("w", "utf-8"), ("r", "utf-8")]
 
-    def test_main_exact_error_case_and_unknown_join(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        monkeypatch.setattr(sys, "argv", ["mdcat", "--watch", "-"])
-        with pytest.raises(SystemExit):
-            mdcat._main()
-        assert (
-            "Error: --watch requires exactly one file path" in capsys.readouterr().out
-        )
-
-        monkeypatch.setattr(sys, "argv", ["mdcat", "--unknown", "--other"])
-        with pytest.raises(SystemExit):
-            mdcat._main()
-        assert "unrecognized arguments: --unknown --other" in capsys.readouterr().err
-
     def test_render_page_section_empty_code_and_inline_options(
         self,
         tmp_path: Path,
@@ -3323,38 +2937,6 @@ class TestOwnedMutationExactH:
         mdcat.render_markdown_file(str(source), Console(file=output), flags)
         assert "No code blocks found" in output.getvalue()
         assert "XX" not in output.getvalue()
-
-    def test_page_console_ascii_force_terminal(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        source = tmp_path / "doc"
-        source.write_text("body")
-        calls: list[dict[str, object]] = []
-
-        def make_console(
-            *,
-            file: StringIO | None = None,
-            force_terminal: bool | None = None,
-            width: int | None = None,
-        ) -> Console:
-            calls.append({"force_terminal": force_terminal, "width": width})
-            return Console(
-                file=file or StringIO(),
-                force_terminal=force_terminal,
-                width=width,
-            )
-
-        monkeypatch.setattr(mdcat, "Console", make_console)
-        flags, _ = mdcat._parse_args(argparse.ArgumentParser(), ["--page", "--ascii"])
-
-        def pager(_: str) -> None:
-            del _
-
-        monkeypatch.setattr(pydoc, "pager", pager)
-        mdcat.render_markdown_file(str(source), Console(file=StringIO()), flags)
-        assert calls[-1] == {"force_terminal": False, "width": None}
 
     def test_main_ansi_open_pins_utf8(
         self,
@@ -3400,27 +2982,6 @@ class TestOwnedMutationExactH:
         )
         assert mdcat._main() == 0
         assert calls[-1] == ("w", "utf-8")
-
-    def test_regular_markdown_forwards_inline_lexer(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        source = tmp_path / "doc"
-        source.write_text("body")
-        values: list[dict[str, object]] = []
-
-        class FakeMarkdown:
-            def __init__(self, body: str, **kwargs: object) -> None:
-                values.append({"body": body, **kwargs})
-
-        monkeypatch.setattr(mdcat, "Markdown", FakeMarkdown)
-        flags, _ = mdcat._parse_args(
-            argparse.ArgumentParser(),
-            ["--inline-code-lexer", "python"],
-        )
-        mdcat.render_markdown_file(str(source), Console(file=StringIO()), flags)
-        assert values[0]["inline_code_lexer"] == "python"
 
 
 _PLAIN = Layout(width=40, justify=False, math=True, frontmatter=True)

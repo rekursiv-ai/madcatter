@@ -35,96 +35,63 @@ def test_process_math_blocks_disabled():
     assert process_math_blocks(text, enable_math=False) == text
 
 
-def test_process_math_blocks_multiple_inline():
-    text = "First $x^2$ and second $y_i$."
+@pytest.mark.parametrize(
+    ("text", "fragments"),
+    [
+        ("First $x^2$ and second $y_i$.", ("x²", "yᵢ")),
+        ("See `agent_spawn.py` and $x^2$ here.", ("`agent_spawn.py`", "x²")),
+        (
+            "Cost $7-10.\nSee `self._events` for details.\nBudget $0.42.",
+            ("`self._events`",),
+        ),
+        ("```\n$x^2$ stays literal\n```\nbut $y^2$ converts.", ("$x^2$", "y²")),
+        ("Cost $500M; equation $x^2$.", ("$500M", "x²")),
+        (
+            "Literal <<<CODE_BLOCK_0>>> text.\n```\nx = 1\n```\nand $y^2$ here.",
+            ("<<<CODE_BLOCK_0>>>", "x = 1", "y²"),
+        ),
+        (
+            "Intro,\n\n```throughput = min(a, b)```\n\nOutro.\n",
+            ("throughput = min(a, b)", "Outro."),
+        ),
+        ("Intro,\n\n```\nx = 1\ntail line\n", ("x = 1", "tail line")),
+    ],
+)
+def test_process_math_blocks_preserves_fragments(
+    text: str,
+    fragments: tuple[str, ...],
+) -> None:
     result = process_math_blocks(text, enable_math=True)
-    assert "x²" in result
-    assert "yᵢ" in result
+    for fragment in fragments:
+        assert fragment in result
 
 
-def test_process_math_blocks_currency_not_treated_as_math():
-    """Currency $N on different lines must not pair as math delimiters."""
-    text = "Cost was $90 and refund was\n$10 back."
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Cost was $90 and refund was\n$10 back.",
+        "Series A target ~$500M (shares ~$2.5M).",
+    ],
+)
+def test_process_math_blocks_preserves_currency(text: str) -> None:
     assert process_math_blocks(text, enable_math=True) == text
 
 
-def test_process_math_blocks_inline_code_protected():
-    """Backtick code spans must survive math processing unchanged."""
-    text = "See `agent_spawn.py` and $x^2$ here."
-    result = process_math_blocks(text, enable_math=True)
-    assert "`agent_spawn.py`" in result
-    assert "x²" in result
-
-
-def test_process_math_blocks_inline_code_with_currency():
-    """Inline code with underscores between currency signs stays intact."""
-    text = "Cost $7-10.\nSee `self._events` for details.\nBudget $0.42."
-    result = process_math_blocks(text, enable_math=True)
-    assert "`self._events`" in result
-
-
-def test_process_math_blocks_fenced_code_protected():
-    text = "```\n$x^2$ stays literal\n```\nbut $y^2$ converts."
-    result = process_math_blocks(text, enable_math=True)
-    assert "$x^2$" in result
-    assert "y²" in result
-
-
-def test_process_math_blocks_same_line_currency_not_paired():
-    """Same-line ``$N ... $M`` currency pairs must not be treated as math."""
-    text = "Series A target ~$500M (shares ~$2.5M)."
-    assert process_math_blocks(text, enable_math=True) == text
-
-
-def test_process_math_blocks_currency_then_real_math():
-    text = "Cost $500M; equation $x^2$."
-    result = process_math_blocks(text, enable_math=True)
-    assert "$500M" in result
-    assert "x²" in result
-
-
-def test_process_math_blocks_literal_placeholder_survives():
-    """Literal placeholder text in source must not collide with sentinels."""
-    text = "Literal <<<CODE_BLOCK_0>>> text.\n```\nx = 1\n```\nand $y^2$ here."
-    result = process_math_blocks(text, enable_math=True)
-    assert "<<<CODE_BLOCK_0>>>" in result
-    assert "x = 1" in result
-    assert "y²" in result
-
-
-def test_process_math_blocks_single_line_fence_span_survives():
-    """A one-line ```code``` span is not a fence opener; content must survive."""
-    text = "Intro,\n\n```throughput = min(a, b)```\n\nOutro.\n"
-    result = process_math_blocks(text, enable_math=True)
-    assert "throughput = min(a, b)" in result
-    assert "Outro." in result
-
-
-def test_process_math_blocks_unterminated_fence_survives():
-    """An unclosed fence must still emit its content, not swallow the tail."""
-    text = "Intro,\n\n```\nx = 1\ntail line\n"
-    result = process_math_blocks(text, enable_math=True)
-    assert "x = 1" in result
-    assert "tail line" in result
-
-
-def test_strip_frontmatter_present():
-    lines = ["---", "title: hi", "---", "body"]
-    assert strip_frontmatter(lines) == ["body"]
-
-
-def test_strip_frontmatter_absent():
-    lines = ["body", "more"]
-    assert strip_frontmatter(lines) == lines
-
-
-def test_strip_frontmatter_empty():
-    assert strip_frontmatter([]) == []
-
-
-def test_strip_frontmatter_unterminated():
-    lines = ["---", "title: hi", "still in frontmatter"]
-    assert strip_frontmatter(lines) == lines
+@pytest.mark.parametrize(
+    ("lines", "expected"),
+    [
+        (["---", "title: hi", "---", "body"], ["body"]),
+        (["body", "more"], ["body", "more"]),
+        ([], []),
+        (
+            ["---", "title: hi", "still in frontmatter"],
+            ["---", "title: hi", "still in frontmatter"],
+        ),
+        (["---", "---", "body"], ["body"]),
+    ],
+)
+def test_strip_frontmatter(lines: list[str], expected: list[str]) -> None:
+    assert strip_frontmatter(lines) == expected
 
 
 def test_is_fence_delimiter_rejects_backticks_in_info():
@@ -147,33 +114,26 @@ def test_normalize_bullets_reads_rendered_bullets_as_list_markers():
     assert normalize_bullets(text) == " - a\n    - b\n•c\na • b\n```\n• d\n```"
 
 
-def test_process_math_blocks_default_enables_conversion():
-    assert process_math_blocks("$x^2$") == "x²"
-
-
-def test_process_math_blocks_preserves_fenced_block_exactly():
-    text = "before\n```python\n$x^2$\n```\nafter"
-    assert process_math_blocks(text) == text
-
-
-def test_process_math_blocks_preserves_indented_code_before_following_math():
-    text = "    $x^2$\nfollowing $y^2$"
-    assert process_math_blocks(text) == "    $x^2$\nfollowing y²"
-
-
-def test_process_math_blocks_preserves_unterminated_fence_exactly():
-    text = "before\n~~~\n$x^2$\ntail"
-    assert process_math_blocks(text) == text
-
-
-def test_process_math_blocks_preserves_math_inside_inline_code():
-    text = "`$x^2$` and $y^2$"
-    assert process_math_blocks(text) == "`$x^2$` and y²"
-
-
-def test_process_math_blocks_restores_backslashes_in_code_verbatim():
-    text = "`\\1 \\g<0> \\n`\n```\nre.sub(r'\\d', r'\\1', s)\n```"
-    assert process_math_blocks(text) == text
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("$x^2$", "x²"),
+        (
+            "before\n```python\n$x^2$\n```\nafter",
+            "before\n```python\n$x^2$\n```\nafter",
+        ),
+        ("    $x^2$\nfollowing $y^2$", "    $x^2$\nfollowing y²"),
+        ("before\n~~~\n$x^2$\ntail", "before\n~~~\n$x^2$\ntail"),
+        ("`$x^2$` and $y^2$", "`$x^2$` and y²"),
+        (
+            "`\\1 \\g<0> \\n`\n```\nre.sub(r'\\d', r'\\1', s)\n```",
+            "`\\1 \\g<0> \\n`\n```\nre.sub(r'\\d', r'\\1', s)\n```",
+        ),
+        ("- a\n    - $x^2$\n", "- a\n    - x²\n"),
+    ],
+)
+def test_process_math_blocks_default_exact_output(text: str, expected: str) -> None:
+    assert process_math_blocks(text) == expected
 
 
 @pytest.mark.parametrize(
@@ -244,10 +204,6 @@ def test_process_math_blocks_skips_the_block_parse_without_math(
     assert parses == ["a $x^2$"]
 
 
-def test_process_math_blocks_converts_math_in_a_nested_list_item():
-    assert process_math_blocks("- a\n    - $x^2$\n") == "- a\n    - x²\n"
-
-
 def test_process_math_blocks_reads_each_character_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -266,10 +222,6 @@ def test_process_math_blocks_reads_each_character_once(
     )
     assert seen
     assert sum(seen) <= len(text)
-
-
-def test_strip_frontmatter_closes_at_first_possible_line():
-    assert strip_frontmatter(["---", "---", "body"]) == ["body"]
 
 
 if __name__ == "__main__":
