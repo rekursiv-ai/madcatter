@@ -752,32 +752,21 @@ def render_markdown(source: str, console: Console, flags: _Flags) -> str:
         inline_code_lexer=flags.inline_code_lexer,
     )
 
+    fileio = io.StringIO()
+    capture_console = Console(
+        file=fileio,
+        force_terminal=flags.color,
+        width=flags.width if flags.page else flags.pad or flags.width,
+    )
+    capture_console.print(markdown)
+    output = fileio.getvalue()
+    if flags.page and flags.ascii:
+        output = to_ascii(output)
+    if not flags.pad:
+        output = strip_trailing_whitespace(output)
     if flags.page:
-        fileio = io.StringIO()
-        page_console = Console(
-            file=fileio,
-            force_terminal=flags.color,
-            width=flags.width,
-        )
-        page_console.print(markdown)
-        output = fileio.getvalue()
-        if flags.ascii:
-            output = to_ascii(output)
-        if not flags.pad:
-            output = strip_trailing_whitespace(output)
         pydoc.pager(output)
     else:
-        # Capture output to strip trailing whitespace (unless --pad specified)
-        fileio = io.StringIO()
-        capture_console = Console(
-            file=fileio,
-            force_terminal=flags.color,
-            width=flags.pad or flags.width,
-        )
-        capture_console.print(markdown)
-        output = fileio.getvalue()
-        if not flags.pad:
-            output = strip_trailing_whitespace(output)
         console.file.write(output)
 
     return markdown_body
