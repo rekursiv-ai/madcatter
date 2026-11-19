@@ -4,7 +4,6 @@
 
 [project]
 name = "madcatter"
-version = "0.1.7"
 description = "Rich-based Markdown console renderer (mdcat) with emoji, LaTeX math, and preprocessing helpers."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -34,6 +33,7 @@ dependencies = [
     # http link checking
     "requests>=2.34.2",
 ]
+dynamic = ["version"]
 
 [project.scripts]
 mdcat = "madcatter.mdcat:main"
@@ -128,7 +128,7 @@ Issues = "https://github.com/rekursiv-ai/madcatter/issues"
 Changelog = "https://github.com/rekursiv-ai/madcatter/releases"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
@@ -138,6 +138,9 @@ exclude = ["**/*_test.py", "**/conftest.py", "madcatter/lib/testing/**"]
 
 [tool.hatch.build.targets.sdist]
 exclude = [".github/**", ".codespell-ignore"]
+
+[tool.hatch.version]
+source = "vcs"
 
 [tool.pytest.ini_options]
 python_files = ["*_test.py", "test_*.py"]
