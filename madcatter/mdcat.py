@@ -516,14 +516,12 @@ def follow_file(
         while True:
             data = _read_or_none(path)
             if data is None:
-                # Follows a file another process writes; polling is the portable watch.
-                time.sleep(poll)  # house-ignore[sleep] -- See above.
+                time.sleep(poll)  # house-ignore[sleep] -- No portable file event.
                 continue
 
             first_data = last_data is None
             if last_data is not None and data == last_data:
-                # Follows a file another process writes; polling is the portable watch.
-                time.sleep(poll)  # house-ignore[sleep] -- See above.
+                time.sleep(poll)  # house-ignore[sleep] -- No portable file event.
                 continue
             last_data = data
 
@@ -549,8 +547,7 @@ def follow_file(
                 _render_line(console, flags, line)
                 anchors.append(_line_hash(line))
 
-            # Follows a file another process writes; polling is the portable watch.
-            time.sleep(poll)  # house-ignore[sleep] -- See above.
+            time.sleep(poll)  # house-ignore[sleep] -- No portable file-change event.
     except KeyboardInterrupt:
         console.print("\n[dim]Stopped following[/dim]")
 
@@ -590,8 +587,7 @@ def watch_file(
             if current_mtime is None and last_mtime is not None:
                 console.print(f"[red]File {escape(path)} not found[/red]")
             last_mtime = current_mtime
-            # Follows a file another process writes; polling is the portable watch.
-            time.sleep(1)  # house-ignore[sleep] -- See above.
+            time.sleep(1)  # house-ignore[sleep] -- No portable file-change event.
     except KeyboardInterrupt:
         console.print("\n[dim]Stopped watching[/dim]")
 
